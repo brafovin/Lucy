@@ -459,7 +459,7 @@
     ];
 
     // hotbar: 9 slots
-    let hotbar = [BLOCKS.GRASS, BLOCKS.DIRT, BLOCKS.STONE, BLOCKS.SAND, BLOCKS.WOOD, BLOCKS.PLANKS, BLOCKS.BRICK, 0, 0];
+    let hotbar = [0,0,0,0,0,0,0,0,0];
     let counts = [0,0,0,0,0,0,0,0,0]; // stack counts (only used/shown for food items)
 
     // ── Food items (ids >= 100, distinct from block ids) ──────────
@@ -1312,11 +1312,32 @@
         }
       }
     }
-    // add item to hotbar: stack onto same food slot, else first empty slot
+    // add item to hotbar first, then inventory
     function addItem(id, n){
       for (let i=0;i<9;i++) if (hotbar[i]===id){ counts[i]+=n; updateHUD(); return true; }
       for (let i=0;i<9;i++) if (!hotbar[i]){ hotbar[i]=id; counts[i]=n; updateHUD(); return true; }
-      return false; // hotbar full
+      // hotbar full: try inventory
+      for (let i=0;i<27;i++) if (playerInv[i]===id){ playerInvCounts[i]+=n; return true; }
+      for (let i=0;i<27;i++) if (!playerInv[i]){ playerInv[i]=id; playerInvCounts[i]=n; return true; }
+      return false; // completely full
+    }
+
+    // block drop (mini spinning cube using block texture)
+    function spawnBlockDrop(bt, x, y, z){
+      const size = 0.32;
+      const g = new THREE.BoxGeometry(size, size, size);
+      const texArr = TEX[bt];
+      let mats;
+      if (texArr) {
+        mats = [texArr[0],texArr[1],texArr[2],texArr[3],texArr[4],texArr[5]]
+          .map(t => new THREE.MeshBasicMaterial({map:t}));
+      } else {
+        mats = new THREE.MeshBasicMaterial({color:'#888'});
+      }
+      const mesh = new THREE.Mesh(g, mats);
+      mesh.position.set(x, y+0.3, z);
+      scene.add(mesh);
+      drops.push({ id:bt, mesh, vy:2.2+Math.random()*0.6, spin:Math.random()*6, age:0 });
     }
 
     // ── Attacking mobs ────────────────────────────────────────────
@@ -1438,21 +1459,24 @@
 
     // player inventory contents: 27 slots (3 rows × 9)
     const playerInv = new Array(27).fill(0);
+    const playerInvCounts = new Array(27).fill(0);
     // crafting grid: 4 slots
     const craftGrid = new Array(4).fill(0);
     // armor slots: helmet, chestplate, leggings, boots (icons as emoji)
     const ARMOR_ICONS = ['⛑','🧥','👖','👟'];
 
-    function makeSlot(bt, onClick, active) {
+    function makeSlot(bt, count, onClick, active) {
       const slot = document.createElement('div');
       slot.className = 'inv-slot' + (active ? ' inv-active' : '');
       if (bt) {
-        const icon = makeBlockIcon(bt, 28);
+        const icon = isFood(bt) ? makeItemIcon(bt, 28) : makeBlockIcon(bt, 28);
         icon.className = 'slot-icon';
         slot.appendChild(icon);
-        const cnt = document.createElement('div');
-        cnt.className = 'item-count'; cnt.textContent = '∞';
-        slot.appendChild(cnt);
+        if (count != null) {
+          const cnt = document.createElement('div');
+          cnt.className = 'item-count'; cnt.textContent = count;
+          slot.appendChild(cnt);
+        }
       }
       if (onClick) slot.addEventListener('click', onClick);
       return slot;
@@ -1534,8 +1558,7 @@
         craftEl.innerHTML = '';
         for (let i = 0; i < 4; i++) {
           const bt = craftGrid[i];
-          const slot = makeSlot(bt, () => {
-            // clicking a filled slot clears it; pick from inv
+          const slot = makeSlot(bt, null, () => {
             craftGrid[i] = 0;
             buildInventoryUI();
           });
@@ -1544,23 +1567,22 @@
         }
       }
 
-      // Main inventory: 3 rows × 9 = 27 slots (ALL_PLACEABLE fills first slots)
+      // Main inventory: 3 rows × 9 = 27 slots (empty by default)
       const mainEl = document.getElementById('inv-main');
       if (mainEl) {
         mainEl.innerHTML = '';
-        // fill playerInv with ALL_PLACEABLE for demo
-        ALL_PLACEABLE.forEach((bt, i) => { if (playerInv[i] === 0) playerInv[i] = bt; });
         for (let i = 0; i < 27; i++) {
           const bt = playerInv[i];
-          const slot = makeSlot(bt, bt ? () => {
-            // click to place into selected hotbar slot
+          const cnt = playerInvCounts[i];
+          const slot = makeSlot(bt, cnt||null, bt ? () => {
             hotbar[invSelectedHotbarSlot] = bt;
-            selectedSlot = invSelectedHotbarSlot;
-            buildInventoryUI();
-            updateHUD();
+            counts[invSelectedHotbarSlot] = cnt;
+            playerInv[i] = 0; playerInvCounts[i] = 0;
+            buildInventoryUI(); updateHUD();
           } : null);
           if (bt) {
-            slot.addEventListener('mouseenter', e => showTooltip(e, BLOCK_NAMES[bt]));
+            const name = isFood(bt) ? ITEM_NAMES[bt] : BLOCK_NAMES[bt];
+            slot.addEventListener('mouseenter', e => showTooltip(e, name||'?'));
             slot.addEventListener('mouseleave', hideTooltip);
           }
           mainEl.appendChild(slot);
@@ -1572,12 +1594,13 @@
       if (hRow) {
         hRow.innerHTML = '';
         hotbar.forEach((bt, i) => {
-          const slot = makeSlot(bt, () => {
+          const slot = makeSlot(bt, counts[i]||null, () => {
             invSelectedHotbarSlot = i;
             buildInventoryUI();
           }, i === invSelectedHotbarSlot);
           if (bt) {
-            slot.addEventListener('mouseenter', e => showTooltip(e, BLOCK_NAMES[bt]));
+            const name = isFood(bt) ? ITEM_NAMES[bt] : BLOCK_NAMES[bt];
+            slot.addEventListener('mouseenter', e => showTooltip(e, name||'?'));
             slot.addEventListener('mouseleave', hideTooltip);
           }
           hRow.appendChild(slot);
@@ -1727,7 +1750,7 @@
           const icon = isFood(bt) ? makeItemIcon(bt, 38) : makeBlockIcon(bt, 38);
           icon.className = 'slot-icon';
           slot.appendChild(icon);
-          if (isFood(bt) && counts[i] > 0) {
+          if (counts[i] > 0) {
             const cnt = document.createElement('div');
             cnt.className = 'slot-count'; cnt.textContent = counts[i];
             slot.appendChild(cnt);
@@ -1869,6 +1892,9 @@
         if (sel && !isFood(sel) && !playerOccupies(nx,ny,nz)) {
           setBlock(nx,ny,nz,sel);
           rebuildChunksAround(nx,nz);
+          counts[selectedSlot]--;
+          if (counts[selectedSlot] <= 0){ counts[selectedSlot]=0; hotbar[selectedSlot]=0; updateHUD(); }
+          else updateHUD();
         }
       }
     });
@@ -2030,10 +2056,14 @@
           const stage = Math.min(9, Math.floor(mining.progress / mining.total * 10));
           updateCrackMesh(curHit, stage);
           if (mining.progress >= mining.total) {
+            const droppedBlock = getBlock(mining.bx, mining.by, mining.bz);
             setBlock(mining.bx, mining.by, mining.bz, BLOCKS.AIR);
             rebuildChunksAround(mining.bx, mining.bz);
             mining.active = false;
             crackMesh.visible = false;
+            // drop block as pickup (use block id as item id for non-food)
+            if (droppedBlock && droppedBlock !== BLOCKS.AIR)
+              spawnBlockDrop(droppedBlock, mining.bx+0.5, mining.by+0.5, mining.bz+0.5);
           }
         }
       }
