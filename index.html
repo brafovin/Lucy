@@ -992,73 +992,103 @@
 
     // ── Mobs (pig / cow / sheep) ──────────────────────────────────
     const mobs = [];
-    function cmat(c){ return new THREE.MeshBasicMaterial({ color: c }); }
-    function shadeHex(hex, amt){
-      const n = parseInt(hex.slice(1),16);
-      let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
-      r=Math.max(0,Math.min(255,r+amt*255));g=Math.max(0,Math.min(255,g+amt*255));b=Math.max(0,Math.min(255,b+amt*255));
-      return `rgb(${r|0},${g|0},${b|0})`;
-    }
-    // shaded box: top brightest, bottom darkest, sides mid
-    function cbox(w,h,d, col){
-      const g = new THREE.BoxGeometry(w,h,d);
-      const side = cmat(shadeHex(col,-0.08));
-      return new THREE.Mesh(g, [side, side, cmat(col), cmat(shadeHex(col,-0.3)), side, side]);
-    }
+    // Extend SP palette with mob colours
+    Object.assign(SP,{
+      A:'#5c3c1a', B:'#3a2510', C:'#d8ccb8',  // cow: body, shadow, cream-patch
+      D:'#808070', E:'#c86060', F:'#1a1a1a',  // cow: grey-face, pink-snout, hoof-black
+      G:'#f0a0a8', H:'#c07888', I:'#fcd4d8',  // pig: mid-pink, dark-pink, light-pink
+      J:'#f0f0ec', K:'#c09870', V:'#7a5830',  // sheep: wool-white, face-tan, face-dark
+    });
 
     const MOB_DEFS = {
-      pig:   { body:'#e89aa6', head:'#e89aa6', leg:'#d98090', snout:'#d3737f', bw:0.55,bh:0.5,bd:0.85, hsz:0.42, hp:6 },
-      cow:   { body:'#5a4632', head:'#4a3826', leg:'#43331f', snout:'#caa', spots:'#1e1812', bw:0.6,bh:0.6,bd:1.0, hsz:0.46, hp:10 },
-      sheep: { body:'#ececec', head:'#d8cfc4', leg:'#7a6a5c', snout:null, bw:0.6,bh:0.62,bd:0.95, hsz:0.4, hp:8, wool:true },
+      pig:   { bw:0.55, bh:0.5,  bd:0.85, hsz:0.42, hp:6  },
+      cow:   { bw:0.6,  bh:0.6,  bd:1.0,  hsz:0.46, hp:10 },
+      sheep: { bw:0.6,  bh:0.62, bd:0.95, hsz:0.4,  hp:8  },
     };
 
-    function buildMobMesh(type) {
-      const D = MOB_DEFS[type];
-      const grp = new THREE.Group();
-      // body (length along -z is "forward"/head end). center body at y so legs reach ground.
-      const legLen = 0.42, legW = 0.18;
-      const bodyY = legLen + D.bh/2;
-      const body = cbox(D.bw, D.bh, D.bd, D.body);
-      body.position.y = bodyY;
+    function buildMobMesh(type){
+      const D=MOB_DEFS[type];
+      const legLen=0.42, legW=0.18;
+      const grp=new THREE.Group();
+      const bodyY=legLen+D.bh/2;
+      let bFaces,hFaces,lFaces,snoutFaces=null;
+
+      if(type==='cow'){
+        const bS=['AABAAABA','ACCCCAAB','ACCCCAAB','AAABAAAB','BAAACCCA','BAAACCCA','AAAAAAAB','BBAAAAAB'];
+        const bT=['BACCCAAB','ACCCCCAB','ACCCCCAB','BAAABAAB','BAAABCCB','BAAACCCA','BAAAAAAB','BBAAAAAB'];
+        const bBot=['BBABBAAB','BABABABB','ABBBAABB','BABBABBA','BABABABB','ABBABBAB','BBABABBA','BABABABB'];
+        bFaces={px:bS,nx:bS,py:bT,ny:bBot,pz:bS,nz:bS};
+        const hFront=['DDDDDDDD','DCCDDCCD','DCCDDCCD','DDDDDDDD','DDDDDDDD','DEEEEEDD','DEEEEEDD','DDDDDDDD'];
+        const hSide =['AADDDDAA','ADDDDDDA','ADDDDDDA','ADDDDDDA','ADDDDDDA','ADDDDDDA','ADDDDDDA','AADDDDAA'];
+        const hTop  =['DDDDDDDD','DDDDDDDD','DDDDDDDD','DDDDDDDD','DDDDDDDD','DDDDDDDD','DDDDDDDD','DDDDDDDD'];
+        hFaces={px:hSide,nx:hSide,py:hTop,ny:hTop,pz:hSide,nz:hFront};
+        const lS=['AAAA','AAAA','AAAA','AAAA','FFFF','FFFF'];
+        lFaces={px:lS,nx:lS,py:lS,ny:lS,pz:lS,nz:lS};
+      } else if(type==='pig'){
+        const bS=['GGGGGGGG','GGGGGGGG','GGGHGGGG','GGGHGGGG','GGGHGGGG','GGGHGGGG','GGGGGGGG','HHHHHHHH'];
+        const bT=['IIIIIIII','IIIIIIII','IIIIIIII','IIIIIIII','IIIIIIII','IIIIIIII','IIIIIIII','IIIIIIII'];
+        const bBot=['HHHHHHHH','HHHHHHHH','HHHHHHHH','HHHHHHHH','HHHHHHHH','HHHHHHHH','HHHHHHHH','HHHHHHHH'];
+        bFaces={px:bS,nx:bS,py:bT,ny:bBot,pz:bS,nz:bS};
+        const hFront=['GGGGGGGG','GIIGGIIG','GIIGGIIG','GGGGGGGG','GGGGGGGG','GGHHHHGG','GGHHHHGG','GGGGGGGG'];
+        const hSide =['GGGGGGGG','GGGGGGGG','GGGGGGGG','GGGGGGGG','GGGGGGGG','GGGGGGGG','GGGGGGGG','GGGGGGGG'];
+        hFaces={px:hSide,nx:hSide,py:hSide,ny:hSide,pz:hSide,nz:hFront};
+        const snFront=['HHHH','HEEH','HEEH','HHHH'];
+        const snSide =['HHHH','HGGH','HGGH','HHHH'];
+        snoutFaces={px:snSide,nx:snSide,py:snSide,ny:snSide,pz:snSide,nz:snFront};
+        const lS=['GGGG','GGGG','GGGG','GGGG','HHHH','HHHH'];
+        lFaces={px:lS,nx:lS,py:lS,ny:lS,pz:lS,nz:lS};
+      } else { // sheep
+        const bS=['JJJJJJJJ','JJeJJeJJ','JeJJJJeJ','JJJJJJJJ','JJeJJeJJ','JeJJJJeJ','JJJJJJJJ','JJeJJeJJ'];
+        const bT=['JeJJJeJJ','JJJJJJJJ','JJeJJJeJ','JJJJJJJJ','JeJJJeJJ','JJJJJJJJ','JJeJJJeJ','JJJJJJJJ'];
+        bFaces={px:bS,nx:bS,py:bT,ny:bT,pz:bS,nz:bS};
+        const hFront=['KKKKKKKK','KVVKKVVK','KVVKKVVK','KKKKKKKK','KKKKKKKK','KKKVVKKK','KKKVVKKK','KKKKKKKK'];
+        const hSide =['KKKKKKKK','KKKKKKKK','KKKKKKKK','KKKKKKKK','KKKKKKKK','KKKKKKKK','KKKKKKKK','KKKKKKKK'];
+        hFaces={px:hSide,nx:hSide,py:hSide,ny:hSide,pz:hSide,nz:hFront};
+        const lS=['KKKK','KKKK','KKKK','KKKK','FFFF','FFFF'];
+        lFaces={px:lS,nx:lS,py:lS,ny:lS,pz:lS,nz:lS};
+      }
+
+      const body=texBox(D.bw,D.bh,D.bd,bFaces);
+      body.position.y=bodyY;
       grp.add(body);
-      // cow/sheep body spots/wool accents
-      if (type==='cow') {
-        const spot = cbox(0.22,0.02,0.3, D.spots); spot.position.set(0.15, bodyY+D.bh/2-0.01, 0.1); grp.add(spot);
-        const spot2= cbox(0.18,0.02,0.22, D.spots); spot2.position.set(-0.18, bodyY+D.bh/2-0.01, -0.15); grp.add(spot2);
-      }
-      if (type==='sheep') {
-        // fluffy wool overlay slightly bigger
-        const wool = cbox(D.bw+0.12, D.bh+0.12, D.bd+0.06, '#f6f6f6'); wool.position.y = bodyY; grp.add(wool);
-      }
-      // head at front (-z)
-      const headGrp = new THREE.Group();
-      const head = cbox(D.hsz, D.hsz, D.hsz, D.head); head.position.set(0,0,0);
+
+      const headGrp=new THREE.Group();
+      const head=texBox(D.hsz,D.hsz,D.hsz,hFaces);
       headGrp.add(head);
-      // snout
-      if (D.snout) { const sn = cbox(D.hsz*0.5, D.hsz*0.4, 0.12, D.snout); sn.position.set(0,-D.hsz*0.1,-D.hsz/2-0.05); headGrp.add(sn); }
-      // eyes
-      const eyeL = cbox(0.06,0.06,0.02,'#222'); eyeL.position.set(-D.hsz*0.28, D.hsz*0.12, -D.hsz/2-0.005);
-      const eyeR = eyeL.clone(); eyeR.position.x = D.hsz*0.28;
-      headGrp.add(eyeL, eyeR);
-      // ears (cow horns / pig+sheep ears)
-      if (type==='cow') {
-        const hL = cbox(0.07,0.07,0.07,'#d8d2c0'); hL.position.set(-D.hsz*0.4,D.hsz*0.45,0); const hR=hL.clone(); hR.position.x=D.hsz*0.4; headGrp.add(hL,hR);
-      } else {
-        const eL = cbox(0.1,0.12,0.04, D.head); eL.position.set(-D.hsz*0.45,D.hsz*0.35,0); const eR=eL.clone(); eR.position.x=D.hsz*0.45; headGrp.add(eL,eR);
+
+      if(snoutFaces){
+        const sn=texBox(D.hsz*0.5,D.hsz*0.38,0.1,snoutFaces);
+        sn.position.set(0,-D.hsz*0.1,-D.hsz/2-0.04);
+        headGrp.add(sn);
       }
-      headGrp.position.set(0, bodyY + D.bh*0.15, -D.bd/2 - D.hsz*0.25);
+      if(type==='cow'){
+        const hornG=new THREE.BoxGeometry(0.07,0.14,0.07);
+        const hornM=new THREE.MeshBasicMaterial({color:'#3a2510'});
+        const hL=new THREE.Mesh(hornG,hornM); hL.position.set(-D.hsz*0.38,D.hsz*0.55,0);
+        const hR=hL.clone(); hR.position.x=D.hsz*0.38;
+        headGrp.add(hL,hR);
+      }
+      if(type==='sheep'){
+        const earG=new THREE.BoxGeometry(0.08,0.14,0.04);
+        const earM=new THREE.MeshBasicMaterial({color:'#c09870'});
+        const eL=new THREE.Mesh(earG,earM); eL.position.set(-D.hsz*0.52,D.hsz*0.3,0);
+        const eR=eL.clone(); eR.position.x=D.hsz*0.52;
+        headGrp.add(eL,eR);
+      }
+
+      headGrp.position.set(0,bodyY+D.bh*0.15,-D.bd/2-D.hsz*0.25);
       grp.add(headGrp);
-      // 4 legs at corners, pivot at top
+
       function leg(x,z){
-        const m = cbox(legW, legLen, legW, D.leg);
-        const g = new THREE.Group(); m.position.y = -legLen/2; g.add(m);
-        g.position.set(x, legLen, z);
+        const m=texBox(legW,legLen,legW,lFaces);
+        const g=new THREE.Group(); m.position.y=-legLen/2; g.add(m);
+        g.position.set(x,legLen,z);
         return g;
       }
-      const lx = D.bw/2 - legW/2, lz = D.bd/2 - legW/2;
-      const legs = [ leg(-lx,-lz), leg(lx,-lz), leg(-lx,lz), leg(lx,lz) ]; // FL,FR,BL,BR
+      const lx=D.bw/2-legW/2, lz=D.bd/2-legW/2;
+      const legs=[leg(-lx,-lz),leg(lx,-lz),leg(-lx,lz),leg(lx,lz)];
       legs.forEach(l=>grp.add(l));
-      return { grp, legs, headGrp };
+      return {grp,legs,headGrp};
     }
 
     // top solid surface y at a column
