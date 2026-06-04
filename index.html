@@ -499,11 +499,208 @@
       [[1,0,0],[0,0,0],[0,1,0],[1,1,0]],
     ];
 
+    // ── Pixel textures ────────────────────────────────────────────
+    // Each texture is a 16×16 canvas painted per block/face
+    function mkTex(drawFn) {
+      const c = document.createElement('canvas'); c.width = c.height = 16;
+      drawFn(c.getContext('2d'));
+      const t = new THREE.CanvasTexture(c);
+      t.magFilter = t.minFilter = THREE.NearestFilter;
+      t.generateMipmaps = false;
+      return t;
+    }
+
+    // noise helper (deterministic)
+    function pxNoise(x,y,s=1){ return ((Math.sin(x*127.1+y*311.7)*43758.5453)%1+1)%1*s; }
+
+    // palette helpers
+    function hx(h){ h=h.replace('#',''); if(h.length===3) h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; return parseInt(h,16); }
+    function addBrightness(h,d){ const c=hx(h),r=Math.min(255,Math.max(0,((c>>16)&255)+d)),g=Math.min(255,Math.max(0,((c>>8)&255)+d)),b=Math.min(255,Math.max(0,(c&255)+d)); return`rgb(${r},${g},${b})`; }
+
+    function fillNoise(ctx, base, spread, seed=0) {
+      for (let y=0;y<16;y++) for (let x=0;x<16;x++) {
+        const d = (pxNoise(x+seed,y+seed)-0.5)*spread*2;
+        ctx.fillStyle = addBrightness(base, d|0);
+        ctx.fillRect(x,y,1,1);
+      }
+    }
+
+    // Block texture definitions: TEX[blockType][faceIdx]
+    // face order: 0=top, 1=bottom, 2=+x, 3=-x, 4=+z, 5=-z
+    const TEX = {};
+    const _T = BLOCKS;
+
+    // helper: same texture for all 6 faces
+    function allFaces(fn) { const t=mkTex(fn); return [t,t,t,t,t,t]; }
+    // helper: top/bottom + sides
+    function topSide(topFn, sideFn) { const t=mkTex(topFn),s=mkTex(sideFn); return [t,t,s,s,s,s]; }
+    // helper: top + bottom + sides
+    function tbs(topFn, botFn, sideFn) { return [mkTex(topFn),mkTex(botFn),mkTex(sideFn),mkTex(sideFn),mkTex(sideFn),mkTex(sideFn)]; }
+
+    // GRASS
+    TEX[_T.GRASS] = tbs(
+      ctx => { // top: bright green with spots
+        fillNoise(ctx,'#5a9e3a',22,1);
+        for(let i=0;i<12;i++){const x=(pxNoise(i,0)*16)|0,y=(pxNoise(0,i)*16)|0; ctx.fillStyle=addBrightness('#5a9e3a',(pxNoise(x,y)*40-20)|0); ctx.fillRect(x,y,1,1);}
+      },
+      ctx => fillNoise(ctx,'#7a5c2e',18,9), // bottom = dirt
+      ctx => { // side: green top strip + dirt
+        fillNoise(ctx,'#7a5c2e',18,3);
+        for(let x=0;x<16;x++) for(let y=0;y<4;y++) { ctx.fillStyle=addBrightness('#5a9e3a',(pxNoise(x,y,3)*30-15)|0); ctx.fillRect(x,y,1,1); }
+      }
+    );
+
+    // DIRT
+    TEX[_T.DIRT] = allFaces(ctx => fillNoise(ctx,'#7a5c2e',22,7));
+
+    // STONE
+    TEX[_T.STONE] = allFaces(ctx => {
+      fillNoise(ctx,'#888',18,5);
+      // crack lines
+      ctx.fillStyle='#666';
+      [[3,2,1,5],[8,0,1,4],[0,8,6,1],[10,6,1,4],[2,12,5,1]].forEach(([x,y,w,h])=>ctx.fillRect(x,y,w,h));
+      ctx.fillStyle='#aaa';
+      [[4,2,1,5],[9,0,1,4],[1,8,5,1],[11,6,1,4],[3,12,4,1]].forEach(([x,y,w,h])=>ctx.fillRect(x,y,w,h));
+    });
+
+    // SAND
+    TEX[_T.SAND] = allFaces(ctx => fillNoise(ctx,'#d4c27a',16,11));
+
+    // WOOD (log)
+    TEX[_T.WOOD] = tbs(
+      ctx => { // top: ring pattern
+        const rings=['#8b6914','#7a5c10','#9a7820','#8b6914'];
+        for(let y=0;y<16;y++) for(let x=0;x<16;x++){
+          const d=Math.sqrt((x-7.5)**2+(y-7.5)**2);
+          ctx.fillStyle=addBrightness(rings[Math.floor(d/2)%rings.length],(pxNoise(x,y,2)*16-8)|0);
+          ctx.fillRect(x,y,1,1);
+        }
+      },
+      ctx => { // bottom: same ring pattern
+        const rings=['#8b6914','#7a5c10','#9a7820','#8b6914'];
+        for(let y=0;y<16;y++) for(let x=0;x<16;x++){
+          const d=Math.sqrt((x-7.5)**2+(y-7.5)**2);
+          ctx.fillStyle=addBrightness(rings[Math.floor(d/2)%rings.length],(pxNoise(x,y,4)*16-8)|0);
+          ctx.fillRect(x,y,1,1);
+        }
+      },
+      ctx => { // side: bark stripes
+        for(let y=0;y<16;y++) for(let x=0;x<16;x++){
+          const stripe = Math.floor(pxNoise(x,0,7)*3);
+          const base = stripe===0?'#9a7830':stripe===1?'#7a5c20':'#8b6820';
+          ctx.fillStyle=addBrightness(base,(pxNoise(x,y,1)*12-6)|0);
+          ctx.fillRect(x,y,1,1);
+        }
+      }
+    );
+
+    // LEAVES
+    TEX[_T.LEAF] = allFaces(ctx => {
+      for(let y=0;y<16;y++) for(let x=0;x<16;x++){
+        const v=pxNoise(x,y,8);
+        if(v<0.12){ctx.fillStyle='rgba(0,0,0,0)';} // transparent holes
+        else { ctx.fillStyle=addBrightness('#2d7a1a',(v*60-20)|0); ctx.fillRect(x,y,1,1); }
+      }
+    });
+
+    // WATER
+    TEX[_T.WATER] = allFaces(ctx => {
+      for(let y=0;y<16;y++) for(let x=0;x<16;x++){
+        const wave=Math.sin((x+y)*0.8)*8;
+        ctx.fillStyle=addBrightness('#3a6fd8',(wave+pxNoise(x,y,2)*10-5)|0);
+        ctx.fillRect(x,y,1,1);
+      }
+    });
+
+    // SNOW
+    TEX[_T.SNOW] = allFaces(ctx => fillNoise(ctx,'#e8f0ff',12,13));
+
+    // GLASS
+    TEX[_T.GLASS] = allFaces(ctx => {
+      ctx.fillStyle='#aad4f580'; ctx.fillRect(0,0,16,16);
+      ctx.fillStyle='rgba(200,235,255,0.5)';
+      [[0,0,16,1],[0,15,16,1],[0,0,1,16],[15,0,1,16]].forEach(([x,y,w,h])=>ctx.fillRect(x,y,w,h));
+      ctx.fillStyle='rgba(255,255,255,0.3)';
+      [[1,1,2,2],[12,2,2,2],[2,11,2,2],[11,12,2,2]].forEach(([x,y,w,h])=>ctx.fillRect(x,y,w,h));
+    });
+
+    // COBBLESTONE
+    TEX[_T.COBBLE] = allFaces(ctx => {
+      const stones=[[0,0,8,8],[8,0,8,8],[0,8,8,8],[8,8,8,8]];
+      stones.forEach(([sx,sy,sw,sh],i)=>{
+        for(let y=sy;y<sy+sh;y++) for(let x=sx;x<sx+sw;x++){
+          ctx.fillStyle=addBrightness('#777',(pxNoise(x+i*3,y+i*3)*30-12)|0);
+          ctx.fillRect(x,y,1,1);
+        }
+        ctx.fillStyle='#444';
+        ctx.fillRect(sx,sy,sw,1); ctx.fillRect(sx,sy,1,sh);
+        ctx.fillStyle='#999';
+        ctx.fillRect(sx+1,sy+1,sw-1,1); ctx.fillRect(sx+1,sy+1,1,sh-1);
+      });
+    });
+
+    // BRICK
+    TEX[_T.BRICK] = allFaces(ctx => {
+      ctx.fillStyle='#333'; ctx.fillRect(0,0,16,16);
+      [[0,0,7,4,'#8b3020'],[8,0,8,4,'#9a3828'],[0,5,7,4,'#7a2818'],[8,5,8,4,'#8b3020'],
+       [0,10,7,4,'#9a3828'],[8,10,8,4,'#7a2818'],[0,2,16,1,'#555'],[0,7,16,1,'#555'],[0,12,16,1,'#555']
+      ].forEach(([x,y,w,h,c])=>{
+        ctx.fillStyle=c; ctx.fillRect(x,y,w,h);
+        for(let px=x;px<x+w;px++) for(let py=y;py<y+h;py++){
+          ctx.fillStyle=addBrightness(c,(pxNoise(px,py)*14-7)|0);
+          ctx.fillRect(px,py,1,1);
+        }
+      });
+    });
+
+    // PLANKS
+    TEX[_T.PLANKS] = allFaces(ctx => {
+      for(let y=0;y<16;y++) for(let x=0;x<16;x++){
+        const plank=Math.floor(y/4)%2;
+        const base=plank?'#b8892a':'#c8993a';
+        const grain=Math.sin(x*0.9+plank*3.14)*5;
+        ctx.fillStyle=addBrightness(base,(grain+pxNoise(x,y)*8-4)|0);
+        ctx.fillRect(x,y,1,1);
+      }
+      ctx.fillStyle='#7a5810';
+      for(let y=0;y<16;y+=4) ctx.fillRect(0,y,16,1);
+    });
+
+    // GRAVEL
+    TEX[_T.GRAVEL] = allFaces(ctx => {
+      for(let y=0;y<16;y++) for(let x=0;x<16;x++){
+        const v=pxNoise(x*2,y*2,5);
+        ctx.fillStyle=addBrightness('#887766',(v*50-20)|0);
+        ctx.fillRect(x,y,1,1);
+      }
+    });
+
+    // COAL
+    TEX[_T.COAL] = allFaces(ctx => {
+      fillNoise(ctx,'#2a2a2a',14,6);
+      // coal veins (bright spots)
+      for(let i=0;i<8;i++){
+        const x=(pxNoise(i,0,9)*14+1)|0, y=(pxNoise(0,i,9)*14+1)|0;
+        ctx.fillStyle='#555'; ctx.fillRect(x,y,2,2);
+        ctx.fillStyle='#222'; ctx.fillRect(x+1,y+1,1,1);
+      }
+    });
+
+    // transparent blocks
+    const TRANSPARENT_BLOCKS = new Set([_T.WATER, _T.GLASS, _T.LEAF]);
+
     const matCache = new Map();
-    function getMat(color, transp) {
-      const k = color+(transp?'t':'');
-      if (!matCache.has(k)) matCache.set(k, new THREE.MeshLambertMaterial({color, transparent:transp, opacity:transp?0.65:1}));
-      return matCache.get(k);
+    function getMat(bt, fi) {
+      const k = `${bt}_${fi}`;
+      if (matCache.has(k)) return matCache.get(k);
+      const texArr = TEX[bt];
+      const tex = texArr ? texArr[fi] : null;
+      const isT = TRANSPARENT_BLOCKS.has(bt);
+      const mat = tex
+        ? new THREE.MeshLambertMaterial({ map: tex, transparent: isT, opacity: bt===_T.WATER?0.78:1, alphaTest: bt===_T.LEAF?0.3:0 })
+        : new THREE.MeshLambertMaterial({ color: BLOCK_COLORS[bt]?.[fi] ?? '#888', transparent: isT });
+      matCache.set(k, mat);
+      return mat;
     }
 
     const chunkMeshes = new Map();
@@ -512,6 +709,7 @@
       const old = chunkMeshes.get(ck);
       if (old) old.forEach(m => { scene.remove(m); m.geometry.dispose(); });
 
+      // group by (blockType, faceIndex) so each group shares one texture/material
       const groups = new Map();
       for (let lx=0; lx<CHUNK_SIZE; lx++)
         for (let lz=0; lz<CHUNK_SIZE; lz++)
@@ -519,19 +717,22 @@
             const wx=cx*CHUNK_SIZE+lx, wz=cz*CHUNK_SIZE+lz;
             const bt = getBlock(wx,y,wz);
             if (!bt) continue;
-            const colors = BLOCK_COLORS[bt];
             faceOffsets.forEach(([dx,dy,dz],fi) => {
               const nb = getBlock(wx+dx,y+dy,wz+dz);
-              if (nb !== BLOCKS.AIR && nb !== BLOCKS.GLASS && bt !== BLOCKS.GLASS) return;
-              if (nb !== BLOCKS.AIR && bt !== BLOCKS.GLASS) return;
-              const c = colors[fi];
-              if (!groups.has(c)) groups.set(c,{pos:[],nor:[],idx:[],cnt:0});
-              const g = groups.get(c);
+              const nbSolid = nb !== BLOCKS.AIR && !TRANSPARENT_BLOCKS.has(nb);
+              const btTransp = TRANSPARENT_BLOCKS.has(bt);
+              if (nbSolid && !btTransp) return;
+              if (nb === bt) return; // same transparent block, skip
+              const gk = `${bt}_${fi}`;
+              if (!groups.has(gk)) groups.set(gk,{pos:[],nor:[],uv:[],idx:[],cnt:0,bt,fi});
+              const g = groups.get(gk);
               const base = g.cnt;
-              faceVertices[fi].forEach(([vx,vy,vz]) => {
+              const uvs = [[0,1],[1,1],[1,0],[0,0]];
+              faceVertices[fi].forEach(([vx,vy,vz],vi) => {
                 g.pos.push(wx+vx, y+vy, wz+vz);
                 const n = faceNormals[fi];
                 g.nor.push(n.x, n.y, n.z);
+                g.uv.push(uvs[vi][0], uvs[vi][1]);
               });
               g.idx.push(base,base+1,base+2, base,base+2,base+3);
               g.cnt += 4;
@@ -539,13 +740,13 @@
           }
 
       const meshes = [];
-      groups.forEach((g,color) => {
+      groups.forEach((g) => {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos,3));
         geo.setAttribute('normal',   new THREE.Float32BufferAttribute(g.nor,3));
+        geo.setAttribute('uv',       new THREE.Float32BufferAttribute(g.uv,2));
         geo.setIndex(g.idx);
-        const isT = color===BLOCK_COLORS[BLOCKS.WATER][0]||color===BLOCK_COLORS[BLOCKS.GLASS][0];
-        const mesh = new THREE.Mesh(geo, getMat(color,isT));
+        const mesh = new THREE.Mesh(geo, getMat(g.bt, g.fi));
         scene.add(mesh);
         meshes.push(mesh);
       });
@@ -578,38 +779,82 @@
     let invDragBlock = null; // block type being dragged from inv grid
     let invSelectedHotbarSlot = 0; // which hotbar slot to fill
 
+    // Draw block icon using the same pixel textures as the 3D game
     function makeBlockIcon(bt, size=38) {
-      const c = document.createElement('canvas');
-      c.width = c.height = size;
-      const ctx = c.getContext('2d');
-      if (!bt || bt === BLOCKS.AIR) { return c; }
-      const colors = BLOCK_COLORS[bt];
-      if (!colors) return c;
-      // draw a simple isometric-ish cube face
-      const s = size;
-      // top face (lighter)
-      ctx.fillStyle = lighten(colors[0], 30);
-      ctx.fillRect(s*0.25, 0, s*0.5, s*0.3);
-      // left face
-      ctx.fillStyle = darken(colors[2], 20);
-      ctx.fillRect(0, s*0.3, s*0.5, s*0.7);
-      // right face
-      ctx.fillStyle = colors[2];
-      ctx.fillRect(s*0.5, s*0.3, s*0.5, s*0.7);
-      // pixel grid overlay
-      ctx.fillStyle = 'rgba(0,0,0,0.08)';
-      for (let px=0; px<s; px+=4) { ctx.fillRect(px,0,1,s); ctx.fillRect(0,px,s,1); }
-      return c;
-    }
+      const out = document.createElement('canvas');
+      out.width = out.height = size;
+      const ctx = out.getContext('2d');
+      if (!bt || bt === BLOCKS.AIR || !TEX[bt]) return out;
 
-    function lighten(hex, amt) {
-      const c = parseInt(hex.replace('#','').padEnd(6,'0'),16);
-      const r = Math.min(255,((c>>16)&0xff)+amt);
-      const g = Math.min(255,((c>>8)&0xff)+amt);
-      const b = Math.min(255,(c&0xff)+amt);
-      return `rgb(${r},${g},${b})`;
+      const texArr = TEX[bt];
+      // get pixel data from textures (top=fi0, side=fi2)
+      const topTex  = texArr[0]; // top face
+      const sideTex = texArr[2]; // side face
+      function getTexCanvas(tex) {
+        if (!tex || !tex.image) return null;
+        return tex.image; // is a canvas
+      }
+      const topC  = getTexCanvas(topTex);
+      const sideC = getTexCanvas(sideTex);
+
+      // isometric cube: top(rhombus), left(darker), right(normal)
+      const s = size;
+      const hw = s*0.5, qh = s*0.25, th = s*0.5;
+
+      ctx.save();
+      // ── top face ──
+      if (topC) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(hw, 0); ctx.lineTo(s, qh); ctx.lineTo(hw, th); ctx.lineTo(0, qh); ctx.closePath();
+        ctx.clip();
+        // skew-draw the 16×16 texture into rhombus
+        ctx.transform(hw/16, qh/16, -hw/16, qh/16, hw, 0);
+        ctx.drawImage(topC, 0, 0);
+        ctx.restore();
+        // darken top slightly
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(hw, 0); ctx.lineTo(s, qh); ctx.lineTo(hw, th); ctx.lineTo(0, qh); ctx.closePath();
+        ctx.clip();
+        ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.fillRect(0,0,s,s);
+        ctx.restore();
+      }
+      // ── left face ──
+      if (sideC) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(0, qh); ctx.lineTo(hw, th); ctx.lineTo(hw, s); ctx.lineTo(0, s*0.75); ctx.closePath();
+        ctx.clip();
+        ctx.transform(hw/16, qh/16, 0, (s-th)/16, 0, th);
+        ctx.drawImage(sideC, 0, 0);
+        ctx.restore();
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(0, qh); ctx.lineTo(hw, th); ctx.lineTo(hw, s); ctx.lineTo(0, s*0.75); ctx.closePath();
+        ctx.clip();
+        ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fillRect(0,0,s,s);
+        ctx.restore();
+      }
+      // ── right face ──
+      if (sideC) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(hw, th); ctx.lineTo(s, qh); ctx.lineTo(s, s*0.75); ctx.lineTo(hw, s); ctx.closePath();
+        ctx.clip();
+        ctx.transform(hw/16, -qh/16, 0, (s-th)/16, hw, th);
+        ctx.drawImage(sideC, 0, 0);
+        ctx.restore();
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(hw, th); ctx.lineTo(s, qh); ctx.lineTo(s, s*0.75); ctx.lineTo(hw, s); ctx.closePath();
+        ctx.clip();
+        ctx.fillStyle='rgba(0,0,0,0.12)'; ctx.fillRect(0,0,s,s);
+        ctx.restore();
+      }
+      ctx.restore();
+      return out;
     }
-    function darken(hex, amt) { return lighten(hex, -amt); }
 
     function buildInventoryUI() {
       const grid = document.getElementById('inv-grid');
@@ -850,68 +1095,143 @@
       renderer.render(scene,camera);
     }
 
-    // ── Animated start-screen background ─────────────────────────
+    // ── Animated pixelated start-screen background ───────────────
     (function() {
       const bc = document.getElementById('bg-canvas');
       if (!bc) return;
-      bc.width  = Math.floor(innerWidth  / 4);
-      bc.height = Math.floor(innerHeight / 4);
+      // render at 1/4 res then CSS scales up with pixelated rendering
+      const SCALE = 4;
+      bc.width  = Math.ceil(innerWidth  / SCALE);
+      bc.height = Math.ceil(innerHeight / SCALE);
+      const W = bc.width, H = bc.height;
       const ctx = bc.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
 
-      const BLOCK_COLS = ['#5a9e3a','#7a5c2e','#888888','#d4c27a','#a0522d','#2d7a1a','#3a6fd8','#8b3a2a'];
-      const particles = Array.from({length:30}, () => ({
-        x: Math.random() * bc.width,
-        y: Math.random() * bc.height,
-        size: 2 + Math.floor(Math.random()*4),
-        color: BLOCK_COLS[Math.floor(Math.random()*BLOCK_COLS.length)],
-        speed: 0.2 + Math.random()*0.5,
-        rot: Math.random()*6.28,
-        rotSpeed: (Math.random()-0.5)*0.04,
+      const BS = 8; // block size in bg-canvas pixels
+
+      // Helper: draw a pixelated block face using TEX
+      function drawBlock(bx, by, bt, fi) {
+        const texArr = TEX[bt];
+        if (!texArr) return;
+        const texC = texArr[fi]?.image;
+        if (!texC) return;
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        // draw 16×16 tex at BS×BS
+        ctx.drawImage(texC, bx, by, BS, BS);
+        ctx.restore();
+      }
+
+      // Build static scene: scrolling panorama
+      // terrain profile (block heights per column)
+      const cols = Math.ceil(W / BS) + 2;
+      const groundY = Math.floor(H * 0.62 / BS); // ground row in block coords
+      const profile = Array.from({length: cols+10}, (_,i) => {
+        return groundY + Math.round(Math.sin(i*0.4)*1.5 + Math.sin(i*0.17)*2);
+      });
+
+      // tree positions
+      const trees = [];
+      for (let c=2; c<cols+8; c+=5+Math.floor(pxNoise(c,0)*4)) {
+        if (profile[c] < groundY+2) trees.push(c);
+      }
+
+      let scroll = 0; // sub-pixel scroll
+      let bgRaf;
+
+      function drawScene() {
+        ctx.clearRect(0,0,W,H);
+
+        // ── sky gradient ──
+        const sky = ctx.createLinearGradient(0,0,0,H);
+        sky.addColorStop(0,'#1a3060');
+        sky.addColorStop(0.45,'#3a80c8');
+        sky.addColorStop(1,'#87ceeb');
+        ctx.fillStyle=sky; ctx.fillRect(0,0,W,H);
+
+        // ── pixel clouds ──
+        const cloudData = [[0.1,0.12,5,2],[0.35,0.08,7,2],[0.6,0.15,4,2],[0.82,0.1,6,2]];
+        cloudData.forEach(([cx,cy,cw,ch]) => {
+          const cloudX = (((cx*W - scroll*0.3)|0) % (W+cw*BS) + W+cw*BS) % (W+cw*BS) - cw*BS;
+          ctx.fillStyle='rgba(255,255,255,0.85)';
+          for(let i=0;i<cw;i++) for(let j=0;j<ch;j++) {
+            if(i===0||i===cw-1) { if(j!==0) continue; }
+            ctx.fillRect((cloudX+i*BS)|0, (cy*H+j*BS)|0, BS, BS);
+          }
+        });
+
+        // ── sun ──
+        ctx.fillStyle='#ffee88';
+        ctx.fillRect(W-BS*4, BS, BS*3, BS*3);
+        ctx.fillStyle='#ffcc00';
+        ctx.fillRect(W-BS*4+1, BS+1, BS*3-2, BS*3-2);
+
+        const offset = (scroll|0) % BS;
+        const startCol = -(offset > 0 ? 1 : 0);
+
+        // draw terrain columns
+        for (let ci = startCol; ci <= Math.ceil(W/BS)+1; ci++) {
+          const worldCol = ci + Math.floor(scroll/BS);
+          const idx = ((worldCol % (cols+10)) + cols+10) % (cols+10);
+          const gh  = profile[idx] ?? groundY;
+          const bx  = ci*BS - offset;
+
+          // sky above ground: draw stone/dirt background columns
+          for (let row = gh+1; row < Math.ceil(H/BS)+2; row++) {
+            const by = row*BS;
+            if (by > H) break;
+            const bt = row === gh+1 ? BLOCKS.GRASS : row < gh+5 ? BLOCKS.DIRT : BLOCKS.STONE;
+            const fi  = row === gh+1 ? 0 : 2; // top face for grass top, side for rest
+            drawBlock(bx, by, bt, fi);
+          }
+          // ground top block
+          drawBlock(bx, gh*BS, BLOCKS.GRASS, 0); // top face
+
+          // draw trees
+          const isTrees = trees.includes(worldCol) || trees.includes(worldCol+1);
+          if (isTrees) {
+            const trunkH = 4;
+            for (let t=1; t<=trunkH; t++) drawBlock(bx, (gh-t)*BS, BLOCKS.WOOD, 2);
+            for (let lx2=-1; lx2<=1; lx2++)
+              for (let ly2=trunkH-1; ly2<=trunkH+1; ly2++)
+                drawBlock(bx+lx2*BS, (gh-ly2)*BS, BLOCKS.LEAF, 0);
+          }
+        }
+
+        // ── floating block particles ──
+        floatingBlocks.forEach(p => {
+          ctx.save();
+          ctx.translate((p.x)|0, (p.y)|0);
+          ctx.rotate(p.rot);
+          const texArr = TEX[p.bt];
+          if (texArr?.[ p.fi]?.image) {
+            ctx.globalAlpha = 0.7;
+            ctx.imageSmoothingEnabled=false;
+            ctx.drawImage(texArr[p.fi].image, -BS/2, -BS/2, BS, BS);
+          }
+          ctx.restore();
+          p.y += p.vy;
+          p.x += p.vx;
+          p.rot += p.rotV;
+          if (p.y > H+BS) { p.y=-BS; p.x=Math.random()*W; }
+        });
+
+        scroll += 0.4;
+      }
+
+      const floatBTs = [BLOCKS.GRASS,BLOCKS.DIRT,BLOCKS.STONE,BLOCKS.SAND,BLOCKS.WOOD,BLOCKS.LEAF,BLOCKS.COBBLE,BLOCKS.BRICK];
+      const floatingBlocks = Array.from({length:18}, (_,i) => ({
+        x: Math.random()*W, y: Math.random()*H,
+        bt: floatBTs[i % floatBTs.length],
+        fi: [0,2,4][i%3],
+        vy: 0.15+Math.random()*0.3,
+        vx: (Math.random()-0.5)*0.2,
+        rot: Math.random()*Math.PI*2,
+        rotV: (Math.random()-0.5)*0.03,
       }));
 
-      // Draw pixel terrain silhouette
-      function drawBg() {
-        ctx.clearRect(0,0,bc.width,bc.height);
-        // sky
-        const sky = ctx.createLinearGradient(0,0,0,bc.height);
-        sky.addColorStop(0,'#1a3a6b'); sky.addColorStop(0.6,'#87ceeb');
-        ctx.fillStyle=sky; ctx.fillRect(0,0,bc.width,bc.height);
-        // terrain hills
-        ctx.fillStyle='#4a8e2a';
-        ctx.beginPath(); ctx.moveTo(0,bc.height);
-        for (let x=0; x<=bc.width; x+=2) {
-          const h = bc.height*0.62 + Math.sin(x*0.18)*6 + Math.sin(x*0.07)*10;
-          ctx.lineTo(x,h);
-        }
-        ctx.lineTo(bc.width,bc.height); ctx.closePath(); ctx.fill();
-        // dirt layer
-        ctx.fillStyle='#7a5c2e';
-        ctx.beginPath(); ctx.moveTo(0,bc.height);
-        for (let x=0; x<=bc.width; x+=2) {
-          const h = bc.height*0.62 + Math.sin(x*0.18)*6 + Math.sin(x*0.07)*10 + 3;
-          ctx.lineTo(x,h);
-        }
-        ctx.lineTo(bc.width,bc.height); ctx.closePath(); ctx.fill();
-        // floating blocks
-        particles.forEach(p => {
-          ctx.save();
-          ctx.translate(Math.round(p.x), Math.round(p.y));
-          const s = p.size;
-          ctx.fillStyle = p.color; ctx.fillRect(0,0,s,s);
-          ctx.fillStyle = lightenRaw(p.color,40); ctx.fillRect(0,0,s,2); ctx.fillRect(0,0,2,s);
-          ctx.fillStyle = darkenRaw(p.color,40);  ctx.fillRect(s-2,0,2,s); ctx.fillRect(0,s-2,s,2);
-          ctx.restore();
-          p.y += p.speed;
-          if (p.y > bc.height+10) { p.y=-10; p.x=Math.random()*bc.width; }
-        });
-      }
-      function lightenRaw(h,a){const c=parseInt(h.replace('#','').padStart(6,'0'),16);return`rgb(${Math.min(255,((c>>16)&255)+a)},${Math.min(255,((c>>8)&255)+a)},${Math.min(255,(c&255)+a)})`}
-      function darkenRaw(h,a){return lightenRaw(h,-a)}
-
-      let bgRaf;
-      function bgLoop(){ drawBg(); bgRaf=requestAnimationFrame(bgLoop); }
+      function bgLoop(){ drawScene(); bgRaf=requestAnimationFrame(bgLoop); }
       bgLoop();
-      // stop when game starts
       window._stopBgAnim = () => cancelAnimationFrame(bgRaf);
     })();
 
