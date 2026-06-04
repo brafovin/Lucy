@@ -66,27 +66,147 @@
     }
 
     /* ── Start screen ── */
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
     #start-screen {
       position: fixed; inset: 0;
-      background: rgba(0,0,0,0.88);
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       color: white; z-index: 200;
+      overflow: hidden;
     }
-    #start-screen h1 {
-      font-size: 52px; margin-bottom: 14px;
-      text-shadow: 4px 4px 0 #333;
-      letter-spacing: 6px; color: #7ec850;
+
+    /* animated sky gradient background */
+    #start-bg {
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, #1a3a6b 0%, #2a6ab0 40%, #87ceeb 70%, #5a9e3a 70%, #4a8e2a 100%);
+      animation: skyMove 20s linear infinite;
     }
-    #start-screen p { font-size: 14px; margin-bottom: 6px; color: #aaa; }
-    #start-btn {
-      margin-top: 28px; padding: 12px 40px;
-      font-size: 18px; background: #4a7a1e;
-      color: white; border: 3px solid #6ab030;
-      cursor: pointer; font-family: inherit;
-      letter-spacing: 2px; text-transform: uppercase;
+    @keyframes skyMove {
+      0%   { filter: brightness(1)   hue-rotate(0deg);   }
+      50%  { filter: brightness(0.7) hue-rotate(-15deg); }
+      100% { filter: brightness(1)   hue-rotate(0deg);   }
     }
-    #start-btn:hover { background: #5b9a28; }
+
+    /* pixel-block rain */
+    .bg-block {
+      position: absolute;
+      image-rendering: pixelated;
+      opacity: 0.35;
+      animation: fallBlock linear infinite;
+    }
+    @keyframes fallBlock {
+      from { transform: translateY(-60px) rotate(0deg); }
+      to   { transform: translateY(110vh)  rotate(360deg); }
+    }
+
+    /* dark overlay so title is readable */
+    #start-overlay {
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,0.45);
+    }
+
+    #start-content {
+      position: relative; z-index: 2;
+      display: flex; flex-direction: column;
+      align-items: center; gap: 0;
+    }
+
+    /* ── Title logo ── */
+    #mc-title {
+      font-family: 'Press Start 2P', 'Courier New', monospace;
+      font-size: clamp(28px, 5vw, 56px);
+      color: #fff;
+      text-shadow:
+        4px  4px 0 #5a3a00,
+        8px  8px 0 rgba(0,0,0,0.4);
+      letter-spacing: 4px;
+      margin-bottom: 6px;
+      animation: titlePulse 3s ease-in-out infinite;
+      user-select: none;
+    }
+    #mc-subtitle {
+      font-family: 'Press Start 2P', 'Courier New', monospace;
+      font-size: clamp(9px, 1.4vw, 14px);
+      color: #ffee44;
+      text-shadow: 2px 2px 0 #996600;
+      letter-spacing: 2px;
+      margin-bottom: 48px;
+      animation: subtitleWiggle 1.5s ease-in-out infinite;
+    }
+    @keyframes titlePulse {
+      0%,100% { transform: scale(1);    }
+      50%      { transform: scale(1.02); }
+    }
+    @keyframes subtitleWiggle {
+      0%,100% { transform: rotate(-2deg) translateX(0);   }
+      50%      { transform: rotate(2deg)  translateX(4px); }
+    }
+
+    /* ── Minecraft-style buttons ── */
+    .mc-btn {
+      font-family: 'Press Start 2P', 'Courier New', monospace;
+      font-size: clamp(10px, 1.5vw, 14px);
+      color: #fff;
+      background: #555;
+      border: none;
+      outline: none;
+      cursor: pointer;
+      padding: 14px 0;
+      width: min(400px, 80vw);
+      text-align: center;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+      position: relative;
+      /* Minecraft beveled button */
+      box-shadow:
+        inset -3px -3px 0 #222,
+        inset  3px  3px 0 #aaa;
+      transition: filter 0.05s;
+      text-shadow: 2px 2px 0 #000;
+      image-rendering: pixelated;
+    }
+    .mc-btn:hover {
+      background: #7a7a7a;
+      box-shadow:
+        inset -3px -3px 0 #333,
+        inset  3px  3px 0 #ccc;
+      filter: brightness(1.15);
+    }
+    .mc-btn:active {
+      box-shadow:
+        inset  3px  3px 0 #222,
+        inset -3px -3px 0 #aaa;
+      transform: translateY(1px);
+    }
+    .mc-btn.green {
+      background: #3a6e1a;
+      box-shadow:
+        inset -3px -3px 0 #1a3a08,
+        inset  3px  3px 0 #6ab030;
+    }
+    .mc-btn.green:hover {
+      background: #4a8e28;
+    }
+
+    /* ── Controls hint ── */
+    #controls-hint {
+      margin-top: 20px;
+      font-family: 'Press Start 2P', 'Courier New', monospace;
+      font-size: clamp(6px, 0.9vw, 9px);
+      color: rgba(255,255,255,0.55);
+      text-align: center;
+      line-height: 2.2;
+      letter-spacing: 1px;
+    }
+
+    /* ── Version badge ── */
+    #version {
+      position: absolute; bottom: 10px; left: 14px;
+      font-family: 'Press Start 2P', 'Courier New', monospace;
+      font-size: 8px; color: rgba(255,255,255,0.4);
+      z-index: 2;
+    }
 
     /* ── Pause ── */
     #paused {
@@ -174,13 +294,38 @@
   <div id="info"></div>
 
   <div id="start-screen">
-    <h1>MINECRAFT</h1>
-    <p>WASD — Bewegen &nbsp;|&nbsp; Maus — Umsehen</p>
-    <p>Leertaste — Springen &nbsp;|&nbsp; Shift — Ducken</p>
-    <p>Linksklick — Block abbauen &nbsp;|&nbsp; Rechtsklick — Block setzen</p>
-    <p>1–9 — Slot wählen &nbsp;|&nbsp; Scroll — Slot wechseln</p>
-    <p><b>E</b> — Inventar öffnen &nbsp;|&nbsp; ESC — Pause</p>
-    <button id="start-btn">Spielen</button>
+    <!-- animated background -->
+    <div id="start-bg"></div>
+    <div id="start-overlay"></div>
+    <!-- floating pixel blocks (filled by JS) -->
+    <canvas id="bg-canvas" style="position:absolute;inset:0;width:100%;height:100%;opacity:0.18;pointer-events:none;image-rendering:pixelated;"></canvas>
+
+    <div id="start-content">
+      <div id="mc-title">MINECRAFT</div>
+      <div id="mc-subtitle">✦ BROWSER EDITION ✦</div>
+
+      <button class="mc-btn green" id="start-btn">▶ &nbsp; Einzelspieler</button>
+      <button class="mc-btn" id="opts-btn" onclick="document.getElementById('opts-panel').style.display=document.getElementById('opts-panel').style.display==='flex'?'none':'flex'">⚙ &nbsp; Optionen</button>
+
+      <!-- inline options panel -->
+      <div id="opts-panel" style="display:none;flex-direction:column;align-items:center;gap:6px;margin-top:4px;
+           background:rgba(0,0,0,0.6);padding:14px 20px;border:2px solid #555;width:min(400px,80vw);">
+        <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#aaa;margin-bottom:6px;letter-spacing:1px;">RENDER-DISTANZ</div>
+        <input type="range" id="opt-render" min="1" max="5" value="3" style="width:100%;accent-color:#7ec850;">
+        <div id="opt-render-lbl" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffee44;">3 Chunks</div>
+        <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#aaa;margin-top:8px;margin-bottom:6px;">PIXEL-SKALIERUNG</div>
+        <input type="range" id="opt-pixel" min="2" max="6" value="4" style="width:100%;accent-color:#7ec850;">
+        <div id="opt-pixel-lbl" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffee44;">Stufe 4</div>
+      </div>
+
+      <div id="controls-hint">
+        WASD Bewegen &nbsp;|&nbsp; MAUS Umsehen &nbsp;|&nbsp; LEERTASTE Springen<br>
+        LINKSKLICK Abbauen &nbsp;|&nbsp; RECHTSKLICK Setzen<br>
+        E Inventar &nbsp;|&nbsp; 1–9 Slot &nbsp;|&nbsp; ESC Pause
+      </div>
+    </div>
+
+    <div id="version">v1.0 — Browser Edition</div>
   </div>
 
   <div id="paused">
@@ -705,14 +850,109 @@
       renderer.render(scene,camera);
     }
 
+    // ── Animated start-screen background ─────────────────────────
+    (function() {
+      const bc = document.getElementById('bg-canvas');
+      if (!bc) return;
+      bc.width  = Math.floor(innerWidth  / 4);
+      bc.height = Math.floor(innerHeight / 4);
+      const ctx = bc.getContext('2d');
+
+      const BLOCK_COLS = ['#5a9e3a','#7a5c2e','#888888','#d4c27a','#a0522d','#2d7a1a','#3a6fd8','#8b3a2a'];
+      const particles = Array.from({length:30}, () => ({
+        x: Math.random() * bc.width,
+        y: Math.random() * bc.height,
+        size: 2 + Math.floor(Math.random()*4),
+        color: BLOCK_COLS[Math.floor(Math.random()*BLOCK_COLS.length)],
+        speed: 0.2 + Math.random()*0.5,
+        rot: Math.random()*6.28,
+        rotSpeed: (Math.random()-0.5)*0.04,
+      }));
+
+      // Draw pixel terrain silhouette
+      function drawBg() {
+        ctx.clearRect(0,0,bc.width,bc.height);
+        // sky
+        const sky = ctx.createLinearGradient(0,0,0,bc.height);
+        sky.addColorStop(0,'#1a3a6b'); sky.addColorStop(0.6,'#87ceeb');
+        ctx.fillStyle=sky; ctx.fillRect(0,0,bc.width,bc.height);
+        // terrain hills
+        ctx.fillStyle='#4a8e2a';
+        ctx.beginPath(); ctx.moveTo(0,bc.height);
+        for (let x=0; x<=bc.width; x+=2) {
+          const h = bc.height*0.62 + Math.sin(x*0.18)*6 + Math.sin(x*0.07)*10;
+          ctx.lineTo(x,h);
+        }
+        ctx.lineTo(bc.width,bc.height); ctx.closePath(); ctx.fill();
+        // dirt layer
+        ctx.fillStyle='#7a5c2e';
+        ctx.beginPath(); ctx.moveTo(0,bc.height);
+        for (let x=0; x<=bc.width; x+=2) {
+          const h = bc.height*0.62 + Math.sin(x*0.18)*6 + Math.sin(x*0.07)*10 + 3;
+          ctx.lineTo(x,h);
+        }
+        ctx.lineTo(bc.width,bc.height); ctx.closePath(); ctx.fill();
+        // floating blocks
+        particles.forEach(p => {
+          ctx.save();
+          ctx.translate(Math.round(p.x), Math.round(p.y));
+          const s = p.size;
+          ctx.fillStyle = p.color; ctx.fillRect(0,0,s,s);
+          ctx.fillStyle = lightenRaw(p.color,40); ctx.fillRect(0,0,s,2); ctx.fillRect(0,0,2,s);
+          ctx.fillStyle = darkenRaw(p.color,40);  ctx.fillRect(s-2,0,2,s); ctx.fillRect(0,s-2,s,2);
+          ctx.restore();
+          p.y += p.speed;
+          if (p.y > bc.height+10) { p.y=-10; p.x=Math.random()*bc.width; }
+        });
+      }
+      function lightenRaw(h,a){const c=parseInt(h.replace('#','').padStart(6,'0'),16);return`rgb(${Math.min(255,((c>>16)&255)+a)},${Math.min(255,((c>>8)&255)+a)},${Math.min(255,(c&255)+a)})`}
+      function darkenRaw(h,a){return lightenRaw(h,-a)}
+
+      let bgRaf;
+      function bgLoop(){ drawBg(); bgRaf=requestAnimationFrame(bgLoop); }
+      bgLoop();
+      // stop when game starts
+      window._stopBgAnim = () => cancelAnimationFrame(bgRaf);
+    })();
+
+    // options sliders
+    const renderSlider = document.getElementById('opt-render');
+    const pixelSlider  = document.getElementById('opt-pixel');
+    if (renderSlider) {
+      renderSlider.addEventListener('input', () => {
+        document.getElementById('opt-render-lbl').textContent = renderSlider.value + ' Chunks';
+      });
+    }
+    if (pixelSlider) {
+      pixelSlider.addEventListener('input', () => {
+        document.getElementById('opt-pixel-lbl').textContent = 'Stufe ' + pixelSlider.value;
+      });
+    }
+
     // ── Start ─────────────────────────────────────────────────────
     updateHUD();
     document.getElementById('start-btn').addEventListener('click', () => {
       // Request pointer lock immediately while gesture is fresh
       document.body.requestPointerLock();
 
+      if (window._stopBgAnim) window._stopBgAnim();
+
+      // apply options
+      const rd = renderSlider ? parseInt(renderSlider.value) : 3;
+      const ps = pixelSlider  ? parseInt(pixelSlider.value)  : 4;
+      renderer.setSize(Math.floor(innerWidth/ps), Math.floor(innerHeight/ps), false);
+
       const startScreen = document.getElementById('start-screen');
-      startScreen.innerHTML = '<h1 style="color:#7ec850;letter-spacing:6px">LADEN…</h1><p style="color:#aaa;margin-top:12px">Welt wird generiert</p>';
+      startScreen.style.background = '#000';
+      startScreen.innerHTML = `
+        <div style="font-family:'Press Start 2P',monospace;font-size:20px;color:#7ec850;
+             text-shadow:3px 3px 0 #2a5a00;letter-spacing:4px;margin-bottom:20px">LADEN…</div>
+        <div style="width:300px;height:14px;background:#222;border:2px solid #555;overflow:hidden;">
+          <div id="load-bar" style="height:100%;width:0%;background:#7ec850;transition:width 0.1s;"></div>
+        </div>
+        <div id="load-txt" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#aaa;margin-top:10px">
+          Welt wird generiert…
+        </div>`;
 
       const sh = terrainHeight(8,8);
       player.pos.set(8, sh+3, 8);
@@ -724,9 +964,10 @@
           tasks.push([dx, dz]);
 
       let i = 0;
+      const bar = document.getElementById('load-bar');
+      const loadTxt = document.getElementById('load-txt');
       function nextChunk() {
         if (i >= tasks.length) {
-          // All done
           startScreen.style.display = 'none';
           started = true;
           lastChunk = `${Math.floor(player.pos.x/CHUNK_SIZE)},${Math.floor(player.pos.z/CHUNK_SIZE)}`;
@@ -736,7 +977,9 @@
         const [dx, dz] = tasks[i++];
         generateChunk(dx, dz);
         buildChunkMesh(dx, dz);
-        // Render a frame so browser stays responsive
+        const pct = Math.round((i / tasks.length) * 100);
+        if (bar) bar.style.width = pct + '%';
+        if (loadTxt) loadTxt.textContent = `Chunk ${i} / ${tasks.length} — ${pct}%`;
         renderer.render(scene, camera);
         setTimeout(nextChunk, 0);
       }
