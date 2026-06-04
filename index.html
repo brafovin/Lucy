@@ -708,15 +708,39 @@
     // ── Start ─────────────────────────────────────────────────────
     updateHUD();
     document.getElementById('start-btn').addEventListener('click', () => {
-      document.getElementById('start-screen').style.display='none';
-      started=true;
-      const sh=terrainHeight(8,8);
-      player.pos.set(8,sh+3,8);
-      for (let dx=-RENDER_DIST;dx<=RENDER_DIST;dx++)
-        for (let dz=-RENDER_DIST;dz<=RENDER_DIST;dz++) { generateChunk(dx,dz); buildChunkMesh(dx,dz); }
-      lastChunk='0,0';
+      // Request pointer lock immediately while gesture is fresh
       document.body.requestPointerLock();
-      requestAnimationFrame(loop);
+
+      const startScreen = document.getElementById('start-screen');
+      startScreen.innerHTML = '<h1 style="color:#7ec850;letter-spacing:6px">LADEN…</h1><p style="color:#aaa;margin-top:12px">Welt wird generiert</p>';
+
+      const sh = terrainHeight(8,8);
+      player.pos.set(8, sh+3, 8);
+
+      // Build chunk list
+      const tasks = [];
+      for (let dx=-RENDER_DIST; dx<=RENDER_DIST; dx++)
+        for (let dz=-RENDER_DIST; dz<=RENDER_DIST; dz++)
+          tasks.push([dx, dz]);
+
+      let i = 0;
+      function nextChunk() {
+        if (i >= tasks.length) {
+          // All done
+          startScreen.style.display = 'none';
+          started = true;
+          lastChunk = `${Math.floor(player.pos.x/CHUNK_SIZE)},${Math.floor(player.pos.z/CHUNK_SIZE)}`;
+          requestAnimationFrame(loop);
+          return;
+        }
+        const [dx, dz] = tasks[i++];
+        generateChunk(dx, dz);
+        buildChunkMesh(dx, dz);
+        // Render a frame so browser stays responsive
+        renderer.render(scene, camera);
+        setTimeout(nextChunk, 0);
+      }
+      nextChunk();
     });
 
     window.addEventListener('resize', () => {
