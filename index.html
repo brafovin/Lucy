@@ -329,7 +329,7 @@
       <div id="controls-hint">
         WASD Bewegen &nbsp;|&nbsp; MAUS Umsehen &nbsp;|&nbsp; LEERTASTE Springen<br>
         LINKSKLICK Abbauen &nbsp;|&nbsp; RECHTSKLICK Setzen<br>
-        E Inventar &nbsp;|&nbsp; 1–9 Slot &nbsp;|&nbsp; ESC Pause
+        E Inventar &nbsp;|&nbsp; 1–9 Slot &nbsp;|&nbsp; F5 Ansicht &nbsp;|&nbsp; ESC Pause
       </div>
     </div>
 
@@ -841,6 +841,98 @@
     const player = { pos: new THREE.Vector3(8,20,8), vel: new THREE.Vector3(), yaw:0, pitch:0, onGround:false, eyeHeight:1.6 };
     const keys = {};
     let selectedSlot = 0;
+
+    // ── Visible character (Steve) ─────────────────────────────────
+    // Built from boxes, grouped so we can move/rotate/animate it.
+    let avatar = null, avatarParts = null, thirdPerson = false;
+    function buildAvatar() {
+      const SKIN = '#c8844c', SHIRT = '#1a9a98', PANTS = '#3a3aa0', HAIR = '#3a2810', SHOE = '#444';
+      function mat(c){ return new THREE.MeshBasicMaterial({ color: c }); }
+      // box with slight per-face shading for depth (MeshBasic ignores lights)
+      function box(w,h,d, color, darker) {
+        const g = new THREE.BoxGeometry(w,h,d);
+        const top = mat(color);
+        const side = mat(darker);
+        // face order: +x,-x,+y,-y,+z,-z
+        return new THREE.Mesh(g, [side, side, top, mat(shade(color,-0.35)), side, side]);
+      }
+      function shade(hex, amt){
+        const n = parseInt(hex.slice(1),16);
+        let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+        r=Math.max(0,Math.min(255,r+amt*255));g=Math.max(0,Math.min(255,g+amt*255));b=Math.max(0,Math.min(255,b+amt*255));
+        return `rgb(${r|0},${g|0},${b|0})`;
+      }
+      const grp = new THREE.Group();
+      // Units: 1 block = 1.0; Steve is ~1.8 tall. Scale parts accordingly.
+      // Head 0.5 cube
+      const head = box(0.5,0.5,0.5, SKIN, shade(SKIN,-0.12));
+      // hair cap on top + back
+      const hair = box(0.52,0.18,0.52, HAIR, shade(HAIR,-0.1)); hair.position.y = 0.18;
+      // face features (eyes)
+      const eyeMat = mat('#ffffff'); const pupMat = mat('#3a2b6a');
+      const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.02), eyeMat);
+      const eyeR = eyeL.clone();
+      eyeL.position.set(-0.12,0.02,0.255); eyeR.position.set(0.12,0.02,0.255);
+      const pupL = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.1,0.03), pupMat);
+      const pupR = pupL.clone();
+      pupL.position.set(-0.08,0.02,0.258); pupR.position.set(0.16,0.02,0.258);
+      const headGrp = new THREE.Group();
+      headGrp.add(head, hair, eyeL, eyeR, pupL, pupR);
+      headGrp.position.y = 1.4; // pivot at neck
+      grp.add(headGrp);
+
+      // Body (torso) 0.5 x 0.75 x 0.25
+      const body = box(0.5,0.75,0.25, SHIRT, shade(SHIRT,-0.12));
+      body.position.y = 0.975;
+      grp.add(body);
+
+      // Arms 0.18 x 0.75 x 0.25, pivot at shoulder
+      function limb(w,h,d,color,dk){
+        const m = box(w,h,d,color,dk);
+        const g = new THREE.Group();
+        m.position.y = -h/2; // hang from pivot
+        g.add(m);
+        return g;
+      }
+      const armL = limb(0.2,0.7,0.22, SHIRT, shade(SHIRT,-0.12));
+      const armR = limb(0.2,0.7,0.22, SHIRT, shade(SHIRT,-0.12));
+      // hands (skin) at bottom of arms
+      [armL,armR].forEach(a=>{ const hand=box(0.2,0.18,0.22,SKIN,shade(SKIN,-0.12)); hand.position.y=-0.61; a.add(hand); });
+      armL.position.set(-0.35,1.35,0); armR.position.set(0.35,1.35,0);
+      grp.add(armL, armR);
+
+      // Legs 0.22 x 0.75 x 0.25, pivot at hip
+      const legL = limb(0.22,0.75,0.24, PANTS, shade(PANTS,-0.12));
+      const legR = limb(0.22,0.75,0.24, PANTS, shade(PANTS,-0.12));
+      [legL,legR].forEach(l=>{ const shoe=box(0.24,0.12,0.26,SHOE,shade(SHOE,-0.1)); shoe.position.y=-0.69; l.add(shoe); });
+      legL.position.set(-0.13,0.6,0); legR.position.set(0.13,0.6,0);
+      grp.add(legL, legR);
+
+      avatar = grp;
+      avatarParts = { headGrp, armL, armR, legL, legR };
+      avatar.visible = thirdPerson;
+      scene.add(avatar);
+    }
+
+    let walkPhase = 0;
+    function updateAvatar(dt) {
+      if (!avatar) return;
+      avatar.visible = thirdPerson;
+      if (!thirdPerson) return;
+      // position at feet, face yaw
+      avatar.position.set(player.pos.x, player.pos.y, player.pos.z);
+      avatar.rotation.y = player.yaw;
+      // head follows pitch
+      avatarParts.headGrp.rotation.x = -player.pitch;
+      // walk animation when moving on ground
+      const moving = (Math.abs(player.vel.x)+Math.abs(player.vel.z)) > 0.5;
+      if (moving) walkPhase += dt*9; else walkPhase *= 0.8;
+      const sw = Math.sin(walkPhase) * (moving ? 0.6 : walkPhase*0);
+      avatarParts.legL.rotation.x =  sw;
+      avatarParts.legR.rotation.x = -sw;
+      avatarParts.armL.rotation.x = -sw;
+      avatarParts.armR.rotation.x =  sw;
+    }
     let paused = false;
     let started = false;
     let inventoryOpen = false;
@@ -1125,6 +1217,7 @@
       keys[e.code] = true;
       if (e.code==='Escape') togglePause();
       if (e.code==='KeyE' && !paused) openInventory();
+      if (e.code==='F5') { e.preventDefault(); thirdPerson = !thirdPerson; }
       const n = parseInt(e.key);
       if (n>=1 && n<=9) { selectedSlot=n-1; updateHUD(); }
     });
@@ -1323,8 +1416,25 @@
       player.vel.y += GRAVITY*dt;
       resolveCollisions(dt);
 
-      camera.position.set(player.pos.x, player.pos.y+player.eyeHeight, player.pos.z);
+      updateAvatar(dt);
       camera.rotation.order='YXZ'; camera.rotation.y=player.yaw; camera.rotation.x=player.pitch;
+      if (thirdPerson) {
+        // orbit camera behind the player
+        const eye = player.pos.y + player.eyeHeight;
+        const dist = 4.0;
+        const dir = new THREE.Vector3(
+          -Math.sin(player.yaw)*Math.cos(player.pitch),
+          Math.sin(player.pitch),
+          -Math.cos(player.yaw)*Math.cos(player.pitch)
+        );
+        camera.position.set(
+          player.pos.x - dir.x*dist,
+          eye          - dir.y*dist,
+          player.pos.z - dir.z*dist
+        );
+      } else {
+        camera.position.set(player.pos.x, player.pos.y+player.eyeHeight, player.pos.z);
+      }
 
       const ck=`${Math.floor(player.pos.x/CHUNK_SIZE)},${Math.floor(player.pos.z/CHUNK_SIZE)}`;
       if (ck!==lastChunk) { lastChunk=ck; updateChunksAround(player.pos.x,player.pos.z); }
@@ -1364,7 +1474,8 @@
     window.__dbg = {
       get player(){return player;}, get scene(){return scene;}, get camera(){return camera;},
       get renderer(){return renderer;}, get started(){return started;},
-      getBlock, raycast, terrainHeight, BLOCKS, render(){ renderer.render(scene,camera); }
+      getBlock, raycast, terrainHeight, BLOCKS, render(){ renderer.render(scene,camera); },
+      setThirdPerson(v){ thirdPerson = v; }, get avatar(){ return avatar; }
     };
 
     // ── Pixelated start-screen background ────────────────────────
@@ -1583,6 +1694,8 @@
 
       const sh = terrainHeight(8,8);
       player.pos.set(8, sh+3, 8);
+
+      if (scene && !avatar) buildAvatar();
 
       // Build chunk list
       const tasks = [];
