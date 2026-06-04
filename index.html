@@ -472,6 +472,7 @@
       const t = new THREE.CanvasTexture(c);
       t.magFilter = t.minFilter = THREE.NearestFilter;
       t.generateMipmaps = false;
+      t.colorSpace = THREE.SRGBColorSpace;
       return t;
     }
 
@@ -662,6 +663,7 @@
     try {
       renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
       renderer.setPixelRatio(1);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.setSize(rW(), rH(), false);
 
       scene = new THREE.Scene();
@@ -670,7 +672,7 @@
 
       camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 200);
       scene.add(Object.assign(new THREE.DirectionalLight(0xfff5d0, 1.3), {position: new THREE.Vector3(50,80,50)}));
-      scene.add(new THREE.AmbientLight(0xaabbff, 0.45));
+      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     } catch(e) {
       console.warn('WebGL init failed:', e.message);
       // Game UI still registers — real browsers with GPU will work fine
