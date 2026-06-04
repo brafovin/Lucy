@@ -771,6 +771,7 @@
       scene.fog = new THREE.Fog('#87ceeb', 40, RENDER_DIST * CHUNK_SIZE * 1.8);
 
       camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 200);
+      scene.add(camera);
       scene.add(Object.assign(new THREE.DirectionalLight(0xfff5d0, 1.3), {position: new THREE.Vector3(50,80,50)}));
       scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     } catch(e) {
@@ -967,11 +968,47 @@
       avatar = grp;
       avatarParts = { headGrp, armL, armR, legL, legR };
       avatar.visible = thirdPerson;
+
+      // ---- First-person view arm (held hand, swings on attack) ----
+      const vArm = texBox(0.18, 0.5, 0.18, armFaces(true));
+      const vPivot = new THREE.Group();
+      vArm.position.set(0, -0.25, 0);
+      vPivot.add(vArm);
+      // rest pose: lower-right of the view, angled toward center
+      vPivot.position.set(0.42, -0.42, -0.7);
+      vPivot.rotation.set(0.2, -0.35, -0.25);
+      camera.add(vPivot);
+      avatarParts.viewArm = vPivot;
+      avatarParts.viewArmRest = { pos: vPivot.position.clone(), rot: vPivot.rotation.clone() };
       scene.add(avatar);
     }
 
     let walkPhase = 0;
+    // ── Attack / hit swing sequence ──────────────────────────────────
+    const swing = { active:false, t:0, dur:0.28 };
+    function startSwing(){ swing.active = true; swing.t = 0; }
+    function updateSwing(dt){
+      if (!avatarParts) return;
+      if (swing.active){
+        swing.t += dt;
+        if (swing.t >= swing.dur){ swing.active = false; swing.t = 0; }
+      }
+      // 0→1 progress, eased arc that rises then falls back
+      const p = swing.active ? swing.t / swing.dur : 0;
+      const arc = Math.sin(p * Math.PI); // 0 at rest, peak mid-swing
+      // first-person view arm: chop forward+down then return
+      const va = avatarParts.viewArm;
+      if (va){
+        va.visible = !thirdPerson;
+        const r = avatarParts.viewArmRest;
+        va.rotation.x = r.rot.x - arc * 1.5;          // swing down/forward
+        va.rotation.z = r.rot.z - arc * 0.25;
+        va.position.y = r.pos.y + arc * 0.10;
+        va.position.z = r.pos.z + arc * 0.18;
+      }
+    }
     function updateAvatar(dt) {
+      updateSwing(dt);
       if (!avatar) return;
       avatar.visible = thirdPerson;
       if (!thirdPerson) return;
@@ -987,7 +1024,13 @@
       avatarParts.legL.rotation.x =  sw;
       avatarParts.legR.rotation.x = -sw;
       avatarParts.armL.rotation.x = -sw;
-      avatarParts.armR.rotation.x =  sw;
+      // right arm: swing overrides walk while attacking
+      if (swing.active){
+        const arc = Math.sin((swing.t/swing.dur) * Math.PI);
+        avatarParts.armR.rotation.x = -arc * 2.4;
+      } else {
+        avatarParts.armR.rotation.x =  sw;
+      }
     }
 
     // ── Mobs (pig / cow / sheep) ──────────────────────────────────
@@ -1636,6 +1679,7 @@
     document.addEventListener('mousedown', e => {
       if (!started||paused||inventoryOpen||document.pointerLockElement!==document.body) return;
       if (e.button===0) {
+        startSwing();
         const hit = raycast(8);
         if (!hit) return;
         const bt = getBlock(hit.bx,hit.by,hit.bz);
@@ -1804,6 +1848,7 @@
           mining.active = false;
           crackMesh.visible = false;
         } else {
+          if (!swing.active) startSwing(); // keep chopping while mining
           mining.progress += dt;
           const stage = Math.min(9, Math.floor(mining.progress / mining.total * 10));
           updateCrackMesh(curHit, stage);
