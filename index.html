@@ -743,18 +743,17 @@
               if (nbSolid && !btTransp) return;
               if (nb === bt) return; // same transparent block, skip
               const gk = `${bt}_${fi}`;
-              if (!groups.has(gk)) groups.set(gk,{pos:[],nor:[],uv:[],idx:[],cnt:0,bt,fi});
+              if (!groups.has(gk)) groups.set(gk,{pos:[],uv:[],bt,fi});
               const g = groups.get(gk);
-              const base = g.cnt;
+              const v = faceVertices[fi];
               const uvs = [[0,1],[1,1],[1,0],[0,0]];
-              faceVertices[fi].forEach(([vx,vy,vz],vi) => {
+              // two triangles per quad (non-indexed → no index-buffer corruption)
+              const tri = [0,1,2, 0,2,3];
+              for (const vi of tri) {
+                const [vx,vy,vz] = v[vi];
                 g.pos.push(wx+vx, y+vy, wz+vz);
-                const n = faceNormals[fi];
-                g.nor.push(n.x, n.y, n.z);
                 g.uv.push(uvs[vi][0], uvs[vi][1]);
-              });
-              g.idx.push(base,base+1,base+2, base,base+2,base+3);
-              g.cnt += 4;
+              }
             });
           }
 
@@ -762,9 +761,8 @@
       groups.forEach((g) => {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos,3));
-        geo.setAttribute('normal',   new THREE.Float32BufferAttribute(g.nor,3));
         geo.setAttribute('uv',       new THREE.Float32BufferAttribute(g.uv,2));
-        geo.setIndex(g.idx);
+        geo.computeBoundingSphere();
         const mesh = new THREE.Mesh(geo, getMat(g.bt, g.fi));
         scene.add(mesh);
         meshes.push(mesh);
