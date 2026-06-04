@@ -465,15 +465,44 @@
     ];
 
     // ── Pixel textures ────────────────────────────────────────────
-    // Each texture is a 16×16 canvas painted per block/face
-    function mkTex(drawFn) {
+    // face brightness multipliers: top=1.0, bottom=0.5, sides=0.75
+    const FACE_BRIGHT = [1.0, 0.5, 0.75, 0.75, 0.85, 0.65];
+
+    function mkTex(drawFn, brightness = 1.0) {
       const c = document.createElement('canvas'); c.width = c.height = 16;
-      drawFn(c.getContext('2d'));
+      const ctx = c.getContext('2d');
+      drawFn(ctx);
+      // bake face brightness into texture
+      if (brightness < 1.0) {
+        const id = ctx.getImageData(0, 0, 16, 16);
+        for (let i = 0; i < id.data.length; i += 4) {
+          id.data[i]   = id.data[i]   * brightness;
+          id.data[i+1] = id.data[i+1] * brightness;
+          id.data[i+2] = id.data[i+2] * brightness;
+        }
+        ctx.putImageData(id, 0, 0);
+      }
       const t = new THREE.CanvasTexture(c);
       t.magFilter = t.minFilter = THREE.NearestFilter;
       t.generateMipmaps = false;
-      t.colorSpace = THREE.SRGBColorSpace;
       return t;
+    }
+
+    // helper: same texture for all 6 faces (with per-face brightness)
+    function allFaces(drawFn) {
+      return FACE_BRIGHT.map(b => mkTex(drawFn, b));
+    }
+    // helper: top/bottom + sides
+    function topSide(topFn, sideFn) {
+      return [mkTex(topFn, FACE_BRIGHT[0]), mkTex(topFn, FACE_BRIGHT[1]),
+              mkTex(sideFn, FACE_BRIGHT[2]), mkTex(sideFn, FACE_BRIGHT[3]),
+              mkTex(sideFn, FACE_BRIGHT[4]), mkTex(sideFn, FACE_BRIGHT[5])];
+    }
+    // helper: top + bottom + sides
+    function tbs(topFn, botFn, sideFn) {
+      return [mkTex(topFn, FACE_BRIGHT[0]), mkTex(botFn, FACE_BRIGHT[1]),
+              mkTex(sideFn, FACE_BRIGHT[2]), mkTex(sideFn, FACE_BRIGHT[3]),
+              mkTex(sideFn, FACE_BRIGHT[4]), mkTex(sideFn, FACE_BRIGHT[5])];
     }
 
     // noise helper (deterministic)
@@ -497,11 +526,6 @@
     const _T = BLOCKS;
 
     // helper: same texture for all 6 faces
-    function allFaces(fn) { const t=mkTex(fn); return [t,t,t,t,t,t]; }
-    // helper: top/bottom + sides
-    function topSide(topFn, sideFn) { const t=mkTex(topFn),s=mkTex(sideFn); return [t,t,s,s,s,s]; }
-    // helper: top + bottom + sides
-    function tbs(topFn, botFn, sideFn) { return [mkTex(topFn),mkTex(botFn),mkTex(sideFn),mkTex(sideFn),mkTex(sideFn),mkTex(sideFn)]; }
 
     // GRASS
     TEX[_T.GRASS] = tbs(
@@ -682,12 +706,17 @@
     function getMat(bt, fi) {
       const k = `${bt}_${fi}`;
       if (matCache.has(k)) return matCache.get(k);
-      const texArr = TEX[bt];
-      const tex = texArr ? texArr[fi] : null;
+      const tex = TEX[bt]?.[fi];
       const isT = TRANSPARENT_BLOCKS.has(bt);
-      const mat = tex
-        ? new THREE.MeshLambertMaterial({ map: tex, transparent: isT, opacity: bt===_T.WATER?0.78:1, alphaTest: bt===_T.LEAF?0.3:0 })
-        : new THREE.MeshLambertMaterial({ color: BLOCK_COLORS[bt]?.[fi] ?? '#888', transparent: isT });
+      // MeshBasicMaterial: no lighting needed, brightness is baked into texture
+      const mat = new THREE.MeshBasicMaterial({
+        map:         tex ?? null,
+        color:       tex ? 0xffffff : (BLOCK_COLORS[bt]?.[fi] ?? '#888'),
+        transparent: isT,
+        opacity:     bt === _T.WATER ? 0.72 : 1,
+        alphaTest:   bt === _T.LEAF  ? 0.3  : 0,
+        side:        isT ? THREE.DoubleSide : THREE.FrontSide,
+      });
       matCache.set(k, mat);
       return mat;
     }
