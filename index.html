@@ -329,7 +329,7 @@
       <div id="controls-hint">
         WASD Bewegen &nbsp;|&nbsp; MAUS Umsehen &nbsp;|&nbsp; LEERTASTE Springen<br>
         LINKSKLICK Abbauen &nbsp;|&nbsp; RECHTSKLICK Setzen<br>
-        E Inventar &nbsp;|&nbsp; 1–9 Slot &nbsp;|&nbsp; F5 Ansicht &nbsp;|&nbsp; ESC Pause
+        E Inventar &nbsp;|&nbsp; 1–9 Slot &nbsp;|&nbsp; Strg/2×W Sprint &nbsp;|&nbsp; F5 Ansicht &nbsp;|&nbsp; ESC Pause
       </div>
     </div>
 
@@ -841,6 +841,7 @@
     const player = { pos: new THREE.Vector3(8,20,8), vel: new THREE.Vector3(), yaw:0, pitch:0, onGround:false, eyeHeight:1.6 };
     const keys = {};
     let selectedSlot = 0;
+    let sprinting = false, sprintToggle = false, lastWTap = 0;
 
     // ── Visible character (Steve) ─────────────────────────────────
     // Pixel-art textured Minecraft Steve, grouped for animation.
@@ -959,8 +960,8 @@
       avatarParts.headGrp.rotation.x = -player.pitch;
       // walk animation when moving on ground
       const moving = (Math.abs(player.vel.x)+Math.abs(player.vel.z)) > 0.5;
-      if (moving) walkPhase += dt*9; else walkPhase *= 0.8;
-      const sw = Math.sin(walkPhase) * (moving ? 0.6 : walkPhase*0);
+      if (moving) walkPhase += dt*(sprinting ? 15 : 9); else walkPhase *= 0.8;
+      const sw = Math.sin(walkPhase) * (moving ? (sprinting ? 0.9 : 0.6) : walkPhase*0);
       avatarParts.legL.rotation.x =  sw;
       avatarParts.legR.rotation.x = -sw;
       avatarParts.armL.rotation.x = -sw;
@@ -1247,6 +1248,12 @@
         if (e.code==='KeyE'||e.code==='Escape') closeInventory();
         return;
       }
+      // double-tap W to start sprinting
+      if (e.code==='KeyW' && !keys['KeyW']) {
+        const t = performance.now();
+        if (t - lastWTap < 300) sprintToggle = true;
+        lastWTap = t;
+      }
       keys[e.code] = true;
       if (e.code==='Escape') togglePause();
       if (e.code==='KeyE' && !paused) openInventory();
@@ -1254,7 +1261,10 @@
       const n = parseInt(e.key);
       if (n>=1 && n<=9) { selectedSlot=n-1; updateHUD(); }
     });
-    document.addEventListener('keyup', e => { keys[e.code]=false; });
+    document.addEventListener('keyup', e => {
+      keys[e.code]=false;
+      if (e.code==='KeyW') sprintToggle = false; // releasing W cancels double-tap sprint
+    });
 
     document.addEventListener('mousemove', e => {
       if (!started||paused||inventoryOpen||document.pointerLockElement!==document.body) return;
@@ -1442,8 +1452,18 @@
       if (keys['KeyS']) mv.addScaledVector(fwd,-1);
       if (keys['KeyD']) mv.addScaledVector(rgt, 1);
       if (keys['KeyA']) mv.addScaledVector(rgt,-1);
-      if (mv.lengthSq()>0) mv.normalize().multiplyScalar(MOVE_SPEED);
+      // sprint: hold Ctrl or double-tap W, only while moving forward
+      const wantSprint = (keys['ControlLeft'] || keys['ControlRight'] || sprintToggle) && keys['KeyW'];
+      sprinting = wantSprint && mv.lengthSq() > 0;
+      const speed = MOVE_SPEED * (sprinting ? 1.7 : 1);
+      if (mv.lengthSq()>0) mv.normalize().multiplyScalar(speed);
       player.vel.x=mv.x; player.vel.z=mv.z;
+      // smooth FOV kick while sprinting
+      const targetFov = sprinting ? 82 : 75;
+      if (Math.abs(camera.fov - targetFov) > 0.1) {
+        camera.fov += (targetFov - camera.fov) * Math.min(1, dt*8);
+        camera.updateProjectionMatrix();
+      }
       if (keys['Space']&&player.onGround) player.vel.y=JUMP_FORCE;
       if (keys['ShiftLeft']) player.vel.y=-5;
       player.vel.y += GRAVITY*dt;
@@ -1508,7 +1528,8 @@
       get player(){return player;}, get scene(){return scene;}, get camera(){return camera;},
       get renderer(){return renderer;}, get started(){return started;},
       getBlock, raycast, terrainHeight, BLOCKS, render(){ renderer.render(scene,camera); },
-      setThirdPerson(v){ thirdPerson = v; }, get avatar(){ return avatar; }
+      setThirdPerson(v){ thirdPerson = v; }, get avatar(){ return avatar; },
+      get sprinting(){ return sprinting; }, get vel(){ return player.vel; }
     };
 
     // ── Pixelated start-screen background ────────────────────────
