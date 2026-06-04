@@ -319,6 +319,32 @@
       padding: 4px 8px; pointer-events: none; z-index: 99; display: none;
       text-shadow: 1px 1px 0 #000; font-family: 'Press Start 2P', monospace;
     }
+    /* ── Crafting table overlay ── */
+    #crafttable {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none; align-items: center; justify-content: center;
+      z-index: 85; image-rendering: pixelated;
+    }
+    #crafttable.open { display: flex; }
+    .ct-title { color:#3a3a3a; font-size:13px; margin-bottom:6px; }
+    .ct-top { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+    .ct-grid { display:grid; grid-template-columns:repeat(3,40px); gap:3px; }
+    .ct-grid .inv-slot { width:40px; height:40px; }
+    .ct-arrow { font-size:28px; color:#555; }
+    #ct-out { width:48px; height:48px; }
+    #ct-out .slot-icon { width:36px; height:36px; }
+    .ct-inv { display:grid; grid-template-columns:repeat(9,36px); gap:2px; }
+    .ct-hotbar { display:grid; grid-template-columns:repeat(9,36px); gap:2px; margin-top:6px; }
+    /* held cursor item */
+    #cursor-item {
+      position: fixed; z-index: 120; pointer-events: none; display:none;
+      width: 32px; height: 32px; image-rendering: pixelated;
+    }
+    #cursor-item .slot-count {
+      position:absolute; bottom:-2px; right:-2px; font-size:12px; color:#fff;
+      text-shadow:1px 1px 0 #000;
+    }
   </style>
 </head>
 <body>
@@ -409,6 +435,22 @@
       <div class="inv-hotbar-row" id="inv-hotbar"></div>
     </div>
   </div>
+
+  <!-- Crafting table (3×3) -->
+  <div id="crafttable">
+    <div class="inv-window">
+      <div class="ct-title">Handwerk (Werkbank)</div>
+      <div class="ct-top">
+        <div class="ct-grid" id="ct-grid"></div>
+        <div class="ct-arrow">→</div>
+        <div class="inv-slot" id="ct-out" title="Ergebnis"></div>
+      </div>
+      <div class="ct-inv" id="ct-inv"></div>
+      <div class="inv-sep-line"></div>
+      <div class="ct-hotbar" id="ct-hotbar"></div>
+    </div>
+  </div>
+
   <div class="inv-tooltip" id="inv-tooltip"></div>
 
   <script type="importmap">
@@ -428,10 +470,10 @@
     const PIXEL_SCALE  = 4; // render at 1/PIXEL_SCALE resolution → pixelated look
 
     // ── Block types ───────────────────────────────────────────────
-    const BLOCKS = { AIR:0, GRASS:1, DIRT:2, STONE:3, SAND:4, WOOD:5, LEAF:6, WATER:7, SNOW:8, GLASS:9, COBBLE:10, BRICK:11, PLANKS:12, GRAVEL:13, COAL:14 };
-    const NUM_BLOCKS = 15;
+    const BLOCKS = { AIR:0, GRASS:1, DIRT:2, STONE:3, SAND:4, WOOD:5, LEAF:6, WATER:7, SNOW:8, GLASS:9, COBBLE:10, BRICK:11, PLANKS:12, GRAVEL:13, COAL:14, WERKBANK:15 };
+    const NUM_BLOCKS = 16;
     // seconds to break each block type
-    const BREAK_TIME = { 0:0, 1:0.6, 2:0.6, 3:1.5, 4:0.5, 5:1.2, 6:0.3, 7:99, 8:0.5, 9:0.8, 10:1.8, 11:2.0, 12:1.0, 13:0.5, 14:1.5 };
+    const BREAK_TIME = { 0:0, 1:0.6, 2:0.6, 3:1.5, 4:0.5, 5:1.2, 6:0.3, 7:99, 8:0.5, 9:0.8, 10:1.8, 11:2.0, 12:1.0, 13:0.5, 14:1.5, 15:1.0 };
 
     // face order: top, bottom, +x, -x, +z, -z
     const BLOCK_COLORS = {
@@ -458,6 +500,7 @@
       [BLOCKS.GLASS]:'Glas', [BLOCKS.COBBLE]:'Kopfsteinpflaster',
       [BLOCKS.BRICK]:'Ziegel', [BLOCKS.PLANKS]:'Holzdielen',
       [BLOCKS.GRAVEL]:'Kies', [BLOCKS.COAL]:'Kohleblock',
+      [BLOCKS.WERKBANK]:'Werkbank',
     };
     const ALL_PLACEABLE = [
       BLOCKS.GRASS, BLOCKS.DIRT, BLOCKS.STONE, BLOCKS.SAND,
@@ -474,9 +517,22 @@
     const ITEM_NAMES = { 101:'Schweinefleisch', 102:'Rindfleisch', 103:'Hammelfleisch' };
     const ITEM_FOOD  = { 101:6, 102:8, 103:6 }; // hunger half-points restored
     const MOB_DROP   = { pig:101, cow:102, sheep:103 };
-    const isFood = id => id >= 100 && id < 200;
+    const isFood = id => id >= 100 && id < 150;
+    const isMaterial = id => id >= 150 && id < 200; // sticks etc.
     const isTool = id => id >= 200;
     const isBlockId = id => id > 0 && id < 100;
+    // crafting materials (ids 150-199)
+    const MATERIALS = { STICK:150 };
+    const MATERIAL_NAMES = { 150:'Stock' };
+    function makeMaterialIcon(id, size=38){
+      const c=document.createElement('canvas'); c.width=c.height=size;
+      const ctx=c.getContext('2d'); const N=16, SC=size/N;
+      const set=(x,y,col)=>{ctx.fillStyle=col; ctx.fillRect(Math.floor(x*SC),Math.floor(y*SC),Math.ceil(SC),Math.ceil(SC));};
+      if (id===MATERIALS.STICK){ // diagonal brown stick
+        for(let i=0;i<9;i++){ set(5+ (i*0.4|0),12-i,'#6b4f2a'); set(6+(i*0.4|0),12-i,'#4a3519'); }
+      }
+      return c;
+    }
     // 8×8 pixel-art meat icons  (1=dark,2=meat,3=light meat,4=bone/fat)
     const MEAT_ROWS = [
       '00444000','04222400','42222240','42333240',
@@ -600,11 +656,13 @@
     // unified icon for any item/block id
     function makeIcon(id, size=38){
       if (isTool(id)) return makeToolIcon(id, size);
+      if (isMaterial(id)) return makeMaterialIcon(id, size);
       if (isFood(id)) return makeItemIcon(id, size);
       return makeBlockIcon(id, size);
     }
     function itemName(id){
       if (isTool(id)) return (toolInfo(id)||{}).name || '?';
+      if (isMaterial(id)) return MATERIAL_NAMES[id] || '?';
       if (isFood(id)) return ITEM_NAMES[id] || '?';
       return BLOCK_NAMES[id] || '?';
     }
@@ -624,6 +682,57 @@
     function attackDamage(id){
       const info = toolInfo(id);
       return info ? info.dmg : 2; // bare hand = 2
+    }
+
+    // ── Crafting recipes ──────────────────────────────────────────
+    const S = MATERIALS.STICK, P = BLOCKS.PLANKS, W = BLOCKS.WOOD;
+    function toolSet(M, matIdx){
+      return [
+        { grid:[[M,M,M],[0,S,0],[0,S,0]], out:{id:toolId('pickaxe',matIdx),count:1} },
+        { grid:[[M,M],[M,S],[0,S]],       out:{id:toolId('axe',matIdx),count:1} },
+        { grid:[[M,M],[S,M],[S,0]],       out:{id:toolId('axe',matIdx),count:1} }, // mirrored
+        { grid:[[M],[S],[S]],             out:{id:toolId('shovel',matIdx),count:1} },
+        { grid:[[M],[M],[S]],             out:{id:toolId('sword',matIdx),count:1} },
+        { grid:[[M,M],[0,S],[0,S]],       out:{id:toolId('hoe',matIdx),count:1} },
+        { grid:[[M,M],[S,0],[S,0]],       out:{id:toolId('hoe',matIdx),count:1} }, // mirrored
+      ];
+    }
+    const RECIPES = [
+      { shapeless:[W], out:{id:P,count:4} },                          // 1 Holz → 4 Dielen
+      { grid:[[P],[P]], out:{id:S,count:4} },                          // 2 Dielen → 4 Stöcke
+      { grid:[[P,P],[P,P]], out:{id:BLOCKS.WERKBANK,count:1} },        // 4 Dielen → Werkbank
+      ...toolSet(P, 0),                                                // Holzwerkzeuge
+      ...toolSet(BLOCKS.STONE, 1),                                     // Steinwerkzeuge (Stein)
+      ...toolSet(BLOCKS.COBBLE, 1),                                    // Steinwerkzeuge (Kopfstein)
+    ];
+    // trim all-zero borders → minimal 2D id array
+    function trimGrid(ids, w, h){
+      let minX=w,minY=h,maxX=-1,maxY=-1;
+      for(let y=0;y<h;y++)for(let x=0;x<w;x++) if(ids[y*w+x]){ if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; }
+      if(maxX<0) return null;
+      const out=[];
+      for(let y=minY;y<=maxY;y++){ const row=[]; for(let x=minX;x<=maxX;x++) row.push(ids[y*w+x]); out.push(row); }
+      return out;
+    }
+    function gridEqual(a,b){
+      if(a.length!==b.length) return false;
+      for(let y=0;y<a.length;y++){ if(a[y].length!==b[y].length) return false;
+        for(let x=0;x<a[y].length;x++) if((a[y][x]||0)!==(b[y][x]||0)) return false; }
+      return true;
+    }
+    // returns matching recipe output {id,count} or null
+    function matchRecipe(ids, w, h){
+      const nonzero = ids.filter(v=>v);
+      const trimmed = trimGrid(ids, w, h);
+      for(const r of RECIPES){
+        if(r.shapeless){
+          const a=[...nonzero].sort((p,q)=>p-q), b=[...r.shapeless].sort((p,q)=>p-q);
+          if(a.length===b.length && a.every((v,i)=>v===b[i])) return r.out;
+        } else if(trimmed && gridEqual(trimmed, r.grid)){
+          return r.out;
+        }
+      }
+      return null;
     }
 
     // ── Noise ─────────────────────────────────────────────────────
@@ -921,6 +1030,38 @@
         ctx.fillStyle='#222'; ctx.fillRect(x+1,y+1,1,1);
       }
     });
+
+    // WERKBANK (crafting table): planks base, grid on top, tools on sides
+    function planksBase(ctx){
+      for(let y=0;y<16;y++) for(let x=0;x<16;x++){
+        const plank=Math.floor(y/4)%2;
+        const base=plank?'#b8892a':'#c8993a';
+        const grain=Math.sin(x*0.9+plank*3.14)*5;
+        ctx.fillStyle=addBrightness(base,(grain+pxNoise(x,y)*8-4)|0);
+        ctx.fillRect(x,y,1,1);
+      }
+    }
+    TEX[_T.WERKBANK] = tbs(
+      ctx => { // top: 2×2 crafting grid drawn on dark wood
+        planksBase(ctx);
+        ctx.fillStyle='#5a4018';
+        ctx.fillRect(2,2,12,12);
+        ctx.fillStyle='#8a6a28';
+        ctx.fillRect(3,3,4,4); ctx.fillRect(9,3,4,4); ctx.fillRect(3,9,4,4); ctx.fillRect(9,9,4,4);
+        ctx.fillStyle='#3a2a10';
+        ctx.fillRect(7,2,2,12); ctx.fillRect(2,7,12,2);
+      },
+      ctx => planksBase(ctx), // bottom plain planks
+      ctx => { // side: planks with a saw / tool mark
+        planksBase(ctx);
+        ctx.fillStyle='#6a4e1a';
+        ctx.fillRect(2,5,12,2);   // tool shelf line
+        ctx.fillStyle='#9a9a9a';  // saw blade
+        ctx.fillRect(4,8,8,1);
+        ctx.fillStyle='#7a5810';  // handle
+        ctx.fillRect(11,8,3,3);
+      }
+    );
 
     // transparent blocks
     const TRANSPARENT_BLOCKS = new Set([_T.WATER, _T.GLASS]);
@@ -1597,10 +1738,55 @@
     // player inventory contents: 27 slots (3 rows × 9)
     const playerInv = new Array(27).fill(0);
     const playerInvCounts = new Array(27).fill(0);
-    // crafting grid: 4 slots
-    const craftGrid = new Array(4).fill(0);
+    // crafting grids (ids + counts): 2×2 in inventory, 3×3 at the table
+    const craftGrid  = new Array(4).fill(0), craftCnt  = new Array(4).fill(0);
+    const craft3     = new Array(9).fill(0), craft3Cnt = new Array(9).fill(0);
     // armor slots: helmet, chestplate, leggings, boots (icons as emoji)
     const ARMOR_ICONS = ['⛑','🧥','👖','👟'];
+
+    // ── Cursor-held item (shared across all containers) ───────────
+    let cursor = null; // {id,count} or null
+    const stackMax = id => (isTool(id) ? 1 : 64);
+    // generic click on a backing (ids[], cnts[]) at index i
+    function clickSlot(ids, cnts, i, right){
+      const sid = ids[i], scnt = cnts[i];
+      if (!cursor){
+        if (!sid) return;
+        if (right){ const take=Math.ceil(scnt/2); cursor={id:sid,count:take}; cnts[i]-=take; if(cnts[i]<=0) ids[i]=0; }
+        else { cursor={id:sid,count:scnt}; ids[i]=0; cnts[i]=0; }
+      } else {
+        if (!sid){
+          if (right){ ids[i]=cursor.id; cnts[i]=1; cursor.count--; if(cursor.count<=0)cursor=null; }
+          else { ids[i]=cursor.id; cnts[i]=cursor.count; cursor=null; }
+        } else if (sid===cursor.id && !isTool(sid)){
+          if (right){ cnts[i]++; cursor.count--; if(cursor.count<=0)cursor=null; }
+          else { cnts[i]+=cursor.count; cursor=null; }
+        } else { // swap
+          const tid=sid, tc=scnt; ids[i]=cursor.id; cnts[i]=cursor.count; cursor={id:tid,count:tc};
+        }
+      }
+    }
+    // taking the crafting output: consume one of each ingredient
+    function takeCraftOutput(ids, cnts, w, h){
+      const out = matchRecipe(ids, w, h);
+      if (!out) return;
+      if (cursor && (cursor.id!==out.id || isTool(out.id))) return; // can't stack onto cursor
+      if (cursor) cursor.count += out.count; else cursor = {id:out.id, count:out.count};
+      for (let i=0;i<ids.length;i++) if (ids[i]){ cnts[i]--; if(cnts[i]<=0) ids[i]=0; }
+    }
+    // cursor follow + render
+    function updateCursorEl(){
+      let el = document.getElementById('cursor-item');
+      if (!el){ el=document.createElement('div'); el.id='cursor-item'; document.body.appendChild(el); }
+      if (!cursor){ el.style.display='none'; return; }
+      el.style.display='block'; el.innerHTML='';
+      const icon = makeIcon(cursor.id, 32); el.appendChild(icon);
+      if (cursor.count>1){ const c=document.createElement('div'); c.className='slot-count'; c.textContent=cursor.count; el.appendChild(c); }
+    }
+    document.addEventListener('mousemove', e=>{
+      const el=document.getElementById('cursor-item');
+      if (el && cursor){ el.style.left=(e.clientX+6)+'px'; el.style.top=(e.clientY+6)+'px'; }
+    });
 
     function makeSlot(bt, count, onClick, active) {
       const slot = document.createElement('div');
@@ -1671,6 +1857,61 @@
       for(let r=0;r<2;r++){ px(0,20+r,'#3a4a9a',4); px(4,20+r,'#2a3a8a',4); }
     }
 
+    // ── Cursor-driven slot rendering helpers ─────────────────────
+    function craftSlotEl(id, count){
+      const slot=document.createElement('div'); slot.className='inv-slot';
+      if(id){ const icon=makeIcon(id,28); icon.className='slot-icon'; slot.appendChild(icon);
+        if(count>1){ const c=document.createElement('div'); c.className='item-count'; c.textContent=count; slot.appendChild(c); } }
+      return slot;
+    }
+    function bindClick(slot, fn){
+      slot.addEventListener('click', e=>{ e.preventDefault(); fn(false); });
+      slot.addEventListener('contextmenu', e=>{ e.preventDefault(); fn(true); });
+    }
+    function tooltipify(slot, id){
+      if(!id) return;
+      slot.addEventListener('mouseenter', e=>showTooltip(e,itemName(id)));
+      slot.addEventListener('mouseleave', hideTooltip);
+    }
+    // storage area (pick up / drop via cursor)
+    function renderStorage(containerEl, ids, cnts, n, rerender){
+      if(!containerEl) return;
+      containerEl.innerHTML='';
+      for(let i=0;i<n;i++){
+        const slot=craftSlotEl(ids[i],cnts[i]);
+        bindClick(slot,(right)=>{ clickSlot(ids,cnts,i,right); rerender(); updateHUD(); });
+        tooltipify(slot, ids[i]);
+        containerEl.appendChild(slot);
+      }
+    }
+    // crafting grid + output slot
+    function renderCraft(gridEl, outEl, ids, cnts, w, h, rerender){
+      if(gridEl){
+        gridEl.innerHTML='';
+        for(let i=0;i<w*h;i++){
+          const slot=craftSlotEl(ids[i],cnts[i]);
+          bindClick(slot,(right)=>{ clickSlot(ids,cnts,i,right); rerender(); });
+          tooltipify(slot, ids[i]);
+          gridEl.appendChild(slot);
+        }
+      }
+      if(outEl){
+        outEl.innerHTML='';
+        const out=matchRecipe(ids,w,h);
+        if(out){
+          const icon=makeIcon(out.id,28); icon.className='slot-icon'; outEl.appendChild(icon);
+          if(out.count>1){ const c=document.createElement('div'); c.className='item-count'; c.textContent=out.count; outEl.appendChild(c); }
+          tooltipify(outEl, out.id);
+        }
+        outEl.onclick=()=>{ takeCraftOutput(ids,cnts,w,h); rerender(); updateHUD(); };
+      }
+    }
+    // empty a crafting grid back into the inventory (on close)
+    function returnGrid(ids, cnts){
+      for(let i=0;i<ids.length;i++){ if(ids[i]){ addItem(ids[i],cnts[i]); ids[i]=0; cnts[i]=0; } }
+    }
+    function returnCursor(){ if(cursor){ addItem(cursor.id,cursor.count); cursor=null; updateCursorEl(); } }
+
     function buildInventoryUI() {
       // Armor slots
       const armorEl = document.getElementById('inv-armor');
@@ -1689,30 +1930,20 @@
       // Player preview
       drawPlayerPreview();
 
-      // Crafting grid (4 slots, clickable to pick block)
-      const craftEl = document.getElementById('inv-craft-grid');
-      if (craftEl) {
-        craftEl.innerHTML = '';
-        for (let i = 0; i < 4; i++) {
-          const bt = craftGrid[i];
-          const slot = makeSlot(bt, null, () => {
-            craftGrid[i] = 0;
-            buildInventoryUI();
-          });
-          if (!bt) slot.style.cursor = 'default';
-          craftEl.appendChild(slot);
-        }
-      }
+      // Crafting grid (2×2) + output
+      renderCraft(document.getElementById('inv-craft-grid'),
+                  document.getElementById('inv-craft-out'),
+                  craftGrid, craftCnt, 2, 2, buildInventoryUI);
 
-      // Tool palette: click any tool to place it in the selected hotbar slot
+      // Tool palette: click a tool to pick it up onto the cursor (creative)
       const toolsEl = document.getElementById('inv-tools');
       if (toolsEl) {
         toolsEl.innerHTML = '';
         ALL_TOOLS.forEach(tid => {
           const slot = makeSlot(tid, null, () => {
-            hotbar[invSelectedHotbarSlot] = tid;
-            counts[invSelectedHotbarSlot] = 1;
-            buildInventoryUI(); updateHUD();
+            returnCursor();
+            cursor = { id:tid, count:1 };
+            updateCursorEl();
           });
           slot.addEventListener('mouseenter', e => showTooltip(e, itemName(tid)));
           slot.addEventListener('mouseleave', hideTooltip);
@@ -1720,43 +1951,11 @@
         });
       }
 
-      // Main inventory: 3 rows × 9 = 27 slots (empty by default)
-      const mainEl = document.getElementById('inv-main');
-      if (mainEl) {
-        mainEl.innerHTML = '';
-        for (let i = 0; i < 27; i++) {
-          const bt = playerInv[i];
-          const cnt = playerInvCounts[i];
-          const slot = makeSlot(bt, cnt||null, bt ? () => {
-            hotbar[invSelectedHotbarSlot] = bt;
-            counts[invSelectedHotbarSlot] = cnt;
-            playerInv[i] = 0; playerInvCounts[i] = 0;
-            buildInventoryUI(); updateHUD();
-          } : null);
-          if (bt) {
-            slot.addEventListener('mouseenter', e => showTooltip(e, itemName(bt)));
-            slot.addEventListener('mouseleave', hideTooltip);
-          }
-          mainEl.appendChild(slot);
-        }
-      }
+      // Main inventory (27) + hotbar (9) via cursor pick/drop
+      renderStorage(document.getElementById('inv-main'), playerInv, playerInvCounts, 27, buildInventoryUI);
+      renderStorage(document.getElementById('inv-hotbar'), hotbar, counts, 9, buildInventoryUI);
 
-      // Hotbar row
-      const hRow = document.getElementById('inv-hotbar');
-      if (hRow) {
-        hRow.innerHTML = '';
-        hotbar.forEach((bt, i) => {
-          const slot = makeSlot(bt, counts[i]||null, () => {
-            invSelectedHotbarSlot = i;
-            buildInventoryUI();
-          }, i === invSelectedHotbarSlot);
-          if (bt) {
-            slot.addEventListener('mouseenter', e => showTooltip(e, itemName(bt)));
-            slot.addEventListener('mouseleave', hideTooltip);
-          }
-          hRow.appendChild(slot);
-        });
-      }
+      updateCursorEl();
     }
 
     function showTooltip(e, text) {
@@ -1775,7 +1974,35 @@
     }
     function closeInventory() {
       inventoryOpen = false;
+      returnGrid(craftGrid, craftCnt);  // don't lose items left in the 2×2 grid
+      returnCursor();
       document.getElementById('inventory').classList.remove('open');
+      updateHUD();
+      document.body.requestPointerLock();
+    }
+
+    // ── Crafting table (3×3) ──────────────────────────────────────
+    let craftTableOpen = false;
+    function buildCraftTableUI(){
+      renderCraft(document.getElementById('ct-grid'),
+                  document.getElementById('ct-out'),
+                  craft3, craft3Cnt, 3, 3, buildCraftTableUI);
+      renderStorage(document.getElementById('ct-inv'), playerInv, playerInvCounts, 27, buildCraftTableUI);
+      renderStorage(document.getElementById('ct-hotbar'), hotbar, counts, 9, buildCraftTableUI);
+      updateCursorEl();
+    }
+    function openCraftTable(){
+      craftTableOpen = true;
+      buildCraftTableUI();
+      document.getElementById('crafttable').classList.add('open');
+      document.exitPointerLock();
+    }
+    function closeCraftTable(){
+      craftTableOpen = false;
+      returnGrid(craft3, craft3Cnt);
+      returnCursor();
+      document.getElementById('crafttable').classList.remove('open');
+      updateHUD();
       document.body.requestPointerLock();
     }
 
@@ -1919,6 +2146,10 @@
         if (e.code==='KeyE'||e.code==='Escape') closeInventory();
         return;
       }
+      if (craftTableOpen) {
+        if (e.code==='KeyE'||e.code==='Escape') closeCraftTable();
+        return;
+      }
       // double-tap W to start sprinting
       if (e.code==='KeyW' && !keys['KeyW']) {
         const t = performance.now();
@@ -1938,20 +2169,20 @@
     });
 
     document.addEventListener('mousemove', e => {
-      if (!started||paused||inventoryOpen||document.pointerLockElement!==document.body) return;
+      if (!started||paused||inventoryOpen||craftTableOpen||document.pointerLockElement!==document.body) return;
       player.yaw   -= e.movementX*0.002;
       player.pitch -= e.movementY*0.002;
       player.pitch  = Math.max(-Math.PI/2+0.01, Math.min(Math.PI/2-0.01, player.pitch));
     });
 
     document.addEventListener('wheel', e => {
-      if (inventoryOpen||paused) return;
+      if (inventoryOpen||craftTableOpen||paused) return;
       selectedSlot = (selectedSlot+(e.deltaY>0?1:-1)+9)%9;
       updateHUD();
     });
 
     document.body.addEventListener('click', () => {
-      if (started&&!paused&&!inventoryOpen) document.body.requestPointerLock();
+      if (started&&!paused&&!inventoryOpen&&!craftTableOpen) document.body.requestPointerLock();
     });
 
     // ── Mining state ─────────────────────────────────────────────
@@ -2016,7 +2247,7 @@
     }
 
     document.addEventListener('mousedown', e => {
-      if (!started||paused||inventoryOpen||document.pointerLockElement!==document.body) return;
+      if (!started||paused||inventoryOpen||craftTableOpen||document.pointerLockElement!==document.body) return;
       if (e.button===0) {
         startSwing();
         // attacking a mob takes priority over mining a block
@@ -2039,6 +2270,8 @@
         }
         const hit = raycast(8);
         if (!hit) return;
+        // right-clicking a Werkbank opens the 3×3 crafting table
+        if (getBlock(hit.bx,hit.by,hit.bz) === BLOCKS.WERKBANK) { openCraftTable(); return; }
         const nx=hit.bx+hit.nx, ny=hit.by+hit.ny, nz=hit.bz+hit.nz;
         if (isBlockId(sel) && !playerOccupies(nx,ny,nz)) {
           setBlock(nx,ny,nz,sel);
@@ -2125,7 +2358,7 @@
     let lastTime = performance.now(), lastChunk = '';
     function loop() {
       requestAnimationFrame(loop);
-      if (!started||paused||inventoryOpen) return;
+      if (!started||paused||inventoryOpen||craftTableOpen) return;
       const now=performance.now(), dt=Math.min((now-lastTime)/1000,0.05);
       lastTime=now;
 
@@ -2242,6 +2475,8 @@
       get hotbar(){ return hotbar; }, get counts(){ return counts; },
       get hunger(){ return hunger; }, set hunger(v){ hunger=v; renderStats(); },
       attackMob, addItem, killMob, toolInfo, miningSpeed, attackDamage, makeToolIcon, ALL_TOOLS,
+      matchRecipe, RECIPES, MATERIALS, craft3, craft3Cnt, openCraftTable, setBlock,
+      get craftTableOpen(){ return craftTableOpen; }, takeCraftOutput, get cursor(){ return cursor; },
       eat(){ eating.active=true; eating.t=0; }
     };
 
