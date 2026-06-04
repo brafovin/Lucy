@@ -250,6 +250,12 @@
       background: #9a9a9a;
     }
     .inv-slot .slot-icon { width: 28px; height: 28px; }
+    /* durability bar (tools) */
+    .dura-bar {
+      position: absolute; left: 3px; right: 3px; bottom: 2px; height: 3px;
+      background: #000; pointer-events: none;
+    }
+    .dura-fill { height: 100%; }
     .inv-slot .item-count {
       position: absolute; bottom: 1px; right: 2px;
       font-size: 9px; color: #fff;
@@ -550,6 +556,7 @@
     // hotbar: 9 slots
     let hotbar = [0,0,0,0,0,0,0,0,0];
     let counts = [0,0,0,0,0,0,0,0,0]; // stack counts (only used/shown for food items)
+    let hotbarDmg = [0,0,0,0,0,0,0,0,0]; // tool damage taken (per slot)
 
     // ── Food items (ids >= 100, distinct from block ids) ──────────
     const ITEMS = { PORK:101, BEEF:102, MUTTON:103 };
@@ -737,6 +744,25 @@
     function attackDamage(id){
       const info = toolInfo(id);
       return info ? info.dmg : 2; // bare hand = 2
+    }
+    // max durability (uses) for a tool
+    const TIER_DURABILITY = { 1:60, 2:132, 3:250, 4:33, 5:1562, 6:2031 };
+    function toolMaxDurability(id){
+      const info = toolInfo(id); if (!info) return 0;
+      if (info.type==='trident') return 250;
+      if (info.type==='bow') return 384;
+      return TIER_DURABILITY[info.tier] || 60;
+    }
+    // wear down the tool in the selected hotbar slot; breaks at max
+    function damageHeldTool(amount){
+      const id = hotbar[selectedSlot];
+      const max = toolMaxDurability(id);
+      if (!max) return;
+      hotbarDmg[selectedSlot] += amount;
+      if (hotbarDmg[selectedSlot] >= max){
+        hotbar[selectedSlot]=0; counts[selectedSlot]=0; hotbarDmg[selectedSlot]=0; // snap!
+      }
+      updateHUD();
     }
 
     // ── Crafting recipes ──────────────────────────────────────────
@@ -1714,12 +1740,17 @@
       }
     }
     // add item to hotbar first, then inventory
-    function addItem(id, n){
-      for (let i=0;i<9;i++) if (hotbar[i]===id){ counts[i]+=n; updateHUD(); return true; }
-      for (let i=0;i<9;i++) if (!hotbar[i]){ hotbar[i]=id; counts[i]=n; updateHUD(); return true; }
+    function addItem(id, n, dmg=0){
+      // tools never stack: place each into its own slot, carrying its damage
+      if (!isTool(id)){
+        for (let i=0;i<9;i++) if (hotbar[i]===id){ counts[i]+=n; updateHUD(); return true; }
+      }
+      for (let i=0;i<9;i++) if (!hotbar[i]){ hotbar[i]=id; counts[i]=n; hotbarDmg[i]=dmg; updateHUD(); return true; }
       // hotbar full: try inventory
-      for (let i=0;i<27;i++) if (playerInv[i]===id){ playerInvCounts[i]+=n; return true; }
-      for (let i=0;i<27;i++) if (!playerInv[i]){ playerInv[i]=id; playerInvCounts[i]=n; return true; }
+      if (!isTool(id)){
+        for (let i=0;i<27;i++) if (playerInv[i]===id){ playerInvCounts[i]+=n; return true; }
+      }
+      for (let i=0;i<27;i++) if (!playerInv[i]){ playerInv[i]=id; playerInvCounts[i]=n; playerInvDmg[i]=dmg; return true; }
       return false; // completely full
     }
 
@@ -1762,6 +1793,7 @@
       best.hp -= attackDamage(hotbar[selectedSlot]);
       best.hurt = 0.25; tintMob(best, 0xff5555);
       best.kb = { x:fx*4, z:fz*4 };                       // knockback
+      damageHeldTool(1);                                   // weapons wear out
       if (best.hp <= 0) killMob(best);
       return true;
     }
@@ -1861,31 +1893,33 @@
     // player inventory contents: 27 slots (3 rows × 9)
     const playerInv = new Array(27).fill(0);
     const playerInvCounts = new Array(27).fill(0);
+    const playerInvDmg = new Array(27).fill(0);
     // crafting grids (ids + counts): 2×2 in inventory, 3×3 at the table
-    const craftGrid  = new Array(4).fill(0), craftCnt  = new Array(4).fill(0);
-    const craft3     = new Array(9).fill(0), craft3Cnt = new Array(9).fill(0);
+    const craftGrid  = new Array(4).fill(0), craftCnt  = new Array(4).fill(0), craftDmg  = new Array(4).fill(0);
+    const craft3     = new Array(9).fill(0), craft3Cnt = new Array(9).fill(0), craft3Dmg = new Array(9).fill(0);
     // armor slots: helmet, chestplate, leggings, boots (icons as emoji)
     const ARMOR_ICONS = ['⛑','🧥','👖','👟'];
 
     // ── Cursor-held item (shared across all containers) ───────────
-    let cursor = null; // {id,count} or null
+    let cursor = null; // {id,count,dmg} or null
     const stackMax = id => (isTool(id) ? 1 : 64);
-    // generic click on a backing (ids[], cnts[]) at index i
-    function clickSlot(ids, cnts, i, right){
-      const sid = ids[i], scnt = cnts[i];
+    // generic click on a backing (ids[], cnts[]) at index i; dmgs optional (tool damage)
+    function clickSlot(ids, cnts, i, right, dmgs){
+      const sid = ids[i], scnt = cnts[i], sdmg = dmgs?dmgs[i]:0;
+      const setD = v => { if (dmgs) dmgs[i] = v; };
       if (!cursor){
         if (!sid) return;
-        if (right){ const take=Math.ceil(scnt/2); cursor={id:sid,count:take}; cnts[i]-=take; if(cnts[i]<=0) ids[i]=0; }
-        else { cursor={id:sid,count:scnt}; ids[i]=0; cnts[i]=0; }
+        if (right && !isTool(sid)){ const take=Math.ceil(scnt/2); cursor={id:sid,count:take,dmg:0}; cnts[i]-=take; if(cnts[i]<=0){ids[i]=0;setD(0);} }
+        else { cursor={id:sid,count:scnt,dmg:sdmg}; ids[i]=0; cnts[i]=0; setD(0); }
       } else {
         if (!sid){
-          if (right){ ids[i]=cursor.id; cnts[i]=1; cursor.count--; if(cursor.count<=0)cursor=null; }
-          else { ids[i]=cursor.id; cnts[i]=cursor.count; cursor=null; }
+          if (right && !isTool(cursor.id)){ ids[i]=cursor.id; cnts[i]=1; setD(0); cursor.count--; if(cursor.count<=0)cursor=null; }
+          else { ids[i]=cursor.id; cnts[i]=cursor.count; setD(cursor.dmg||0); cursor=null; }
         } else if (sid===cursor.id && !isTool(sid)){
           if (right){ cnts[i]++; cursor.count--; if(cursor.count<=0)cursor=null; }
           else { cnts[i]+=cursor.count; cursor=null; }
         } else { // swap
-          const tid=sid, tc=scnt; ids[i]=cursor.id; cnts[i]=cursor.count; cursor={id:tid,count:tc};
+          const tid=sid, tc=scnt; ids[i]=cursor.id; cnts[i]=cursor.count; setD(cursor.dmg||0); cursor={id:tid,count:tc,dmg:sdmg};
         }
       }
     }
@@ -1894,7 +1928,7 @@
       const out = matchRecipe(ids, w, h);
       if (!out) return;
       if (cursor && (cursor.id!==out.id || isTool(out.id))) return; // can't stack onto cursor
-      if (cursor) cursor.count += out.count; else cursor = {id:out.id, count:out.count};
+      if (cursor) cursor.count += out.count; else cursor = {id:out.id, count:out.count, dmg:0};
       for (let i=0;i<ids.length;i++) if (ids[i]){ cnts[i]--; if(cnts[i]<=0) ids[i]=0; }
     }
     // cursor follow + render
@@ -1905,6 +1939,7 @@
       el.style.display='block'; el.innerHTML='';
       const icon = makeIcon(cursor.id, 32); el.appendChild(icon);
       if (cursor.count>1){ const c=document.createElement('div'); c.className='slot-count'; c.textContent=cursor.count; el.appendChild(c); }
+      const db = durabilityBar(cursor.id, cursor.dmg||0); if (db) el.appendChild(db);
     }
     document.addEventListener('mousemove', e=>{
       const el=document.getElementById('cursor-item');
@@ -1981,10 +2016,23 @@
     }
 
     // ── Cursor-driven slot rendering helpers ─────────────────────
-    function craftSlotEl(id, count){
+    function durabilityBar(id, dmg){
+      const max = toolMaxDurability(id);
+      if (!max || !dmg || dmg<=0) return null;
+      const frac = Math.max(0, (max-dmg)/max);
+      const bar=document.createElement('div'); bar.className='dura-bar';
+      const fill=document.createElement('div'); fill.className='dura-fill';
+      fill.style.width=(frac*100)+'%';
+      // green→yellow→red by remaining fraction
+      const hue = Math.round(frac*120);
+      fill.style.background=`hsl(${hue},90%,45%)`;
+      bar.appendChild(fill); return bar;
+    }
+    function craftSlotEl(id, count, dmg){
       const slot=document.createElement('div'); slot.className='inv-slot';
       if(id){ const icon=makeIcon(id,28); icon.className='slot-icon'; slot.appendChild(icon);
-        if(count>1){ const c=document.createElement('div'); c.className='item-count'; c.textContent=count; slot.appendChild(c); } }
+        if(count>1){ const c=document.createElement('div'); c.className='item-count'; c.textContent=count; slot.appendChild(c); }
+        const db=durabilityBar(id,dmg); if(db) slot.appendChild(db); }
       return slot;
     }
     function bindClick(slot, fn){
@@ -1996,24 +2044,24 @@
       slot.addEventListener('mouseenter', e=>showTooltip(e,itemName(id)));
       slot.addEventListener('mouseleave', hideTooltip);
     }
-    // storage area (pick up / drop via cursor)
-    function renderStorage(containerEl, ids, cnts, n, rerender){
+    // storage area (pick up / drop via cursor); dmgs optional
+    function renderStorage(containerEl, ids, cnts, n, rerender, dmgs){
       if(!containerEl) return;
       containerEl.innerHTML='';
       for(let i=0;i<n;i++){
-        const slot=craftSlotEl(ids[i],cnts[i]);
-        bindClick(slot,(right)=>{ clickSlot(ids,cnts,i,right); rerender(); updateHUD(); });
+        const slot=craftSlotEl(ids[i],cnts[i],dmgs?dmgs[i]:0);
+        bindClick(slot,(right)=>{ clickSlot(ids,cnts,i,right,dmgs); rerender(); updateHUD(); });
         tooltipify(slot, ids[i]);
         containerEl.appendChild(slot);
       }
     }
-    // crafting grid + output slot
-    function renderCraft(gridEl, outEl, ids, cnts, w, h, rerender){
+    // crafting grid + output slot; dmgs optional
+    function renderCraft(gridEl, outEl, ids, cnts, w, h, rerender, dmgs){
       if(gridEl){
         gridEl.innerHTML='';
         for(let i=0;i<w*h;i++){
-          const slot=craftSlotEl(ids[i],cnts[i]);
-          bindClick(slot,(right)=>{ clickSlot(ids,cnts,i,right); rerender(); });
+          const slot=craftSlotEl(ids[i],cnts[i],dmgs?dmgs[i]:0);
+          bindClick(slot,(right)=>{ clickSlot(ids,cnts,i,right,dmgs); rerender(); });
           tooltipify(slot, ids[i]);
           gridEl.appendChild(slot);
         }
@@ -2030,10 +2078,10 @@
       }
     }
     // empty a crafting grid back into the inventory (on close)
-    function returnGrid(ids, cnts){
-      for(let i=0;i<ids.length;i++){ if(ids[i]){ addItem(ids[i],cnts[i]); ids[i]=0; cnts[i]=0; } }
+    function returnGrid(ids, cnts, dmgs){
+      for(let i=0;i<ids.length;i++){ if(ids[i]){ addItem(ids[i],cnts[i],dmgs?dmgs[i]:0); ids[i]=0; cnts[i]=0; if(dmgs)dmgs[i]=0; } }
     }
-    function returnCursor(){ if(cursor){ addItem(cursor.id,cursor.count); cursor=null; updateCursorEl(); } }
+    function returnCursor(){ if(cursor){ addItem(cursor.id,cursor.count,cursor.dmg||0); cursor=null; updateCursorEl(); } }
 
     function buildInventoryUI() {
       // Armor slots
@@ -2056,7 +2104,7 @@
       // Crafting grid (2×2) + output
       renderCraft(document.getElementById('inv-craft-grid'),
                   document.getElementById('inv-craft-out'),
-                  craftGrid, craftCnt, 2, 2, buildInventoryUI);
+                  craftGrid, craftCnt, 2, 2, buildInventoryUI, craftDmg);
 
       // Tool palette: click a tool to pick it up onto the cursor (creative)
       const toolsEl = document.getElementById('inv-tools');
@@ -2065,7 +2113,7 @@
         ALL_TOOLS.forEach(tid => {
           const slot = makeSlot(tid, null, () => {
             returnCursor();
-            cursor = { id:tid, count:1 };
+            cursor = { id:tid, count:1, dmg:0 };
             updateCursorEl();
           });
           slot.addEventListener('mouseenter', e => showTooltip(e, itemName(tid)));
@@ -2075,8 +2123,8 @@
       }
 
       // Main inventory (27) + hotbar (9) via cursor pick/drop
-      renderStorage(document.getElementById('inv-main'), playerInv, playerInvCounts, 27, buildInventoryUI);
-      renderStorage(document.getElementById('inv-hotbar'), hotbar, counts, 9, buildInventoryUI);
+      renderStorage(document.getElementById('inv-main'), playerInv, playerInvCounts, 27, buildInventoryUI, playerInvDmg);
+      renderStorage(document.getElementById('inv-hotbar'), hotbar, counts, 9, buildInventoryUI, hotbarDmg);
 
       updateCursorEl();
     }
@@ -2097,7 +2145,7 @@
     }
     function closeInventory() {
       inventoryOpen = false;
-      returnGrid(craftGrid, craftCnt);  // don't lose items left in the 2×2 grid
+      returnGrid(craftGrid, craftCnt, craftDmg);  // don't lose items left in the 2×2 grid
       returnCursor();
       document.getElementById('inventory').classList.remove('open');
       updateHUD();
@@ -2109,9 +2157,9 @@
     function buildCraftTableUI(){
       renderCraft(document.getElementById('ct-grid'),
                   document.getElementById('ct-out'),
-                  craft3, craft3Cnt, 3, 3, buildCraftTableUI);
-      renderStorage(document.getElementById('ct-inv'), playerInv, playerInvCounts, 27, buildCraftTableUI);
-      renderStorage(document.getElementById('ct-hotbar'), hotbar, counts, 9, buildCraftTableUI);
+                  craft3, craft3Cnt, 3, 3, buildCraftTableUI, craft3Dmg);
+      renderStorage(document.getElementById('ct-inv'), playerInv, playerInvCounts, 27, buildCraftTableUI, playerInvDmg);
+      renderStorage(document.getElementById('ct-hotbar'), hotbar, counts, 9, buildCraftTableUI, hotbarDmg);
       updateCursorEl();
     }
     function openCraftTable(){
@@ -2122,7 +2170,7 @@
     }
     function closeCraftTable(){
       craftTableOpen = false;
-      returnGrid(craft3, craft3Cnt);
+      returnGrid(craft3, craft3Cnt, craft3Dmg);
       returnCursor();
       document.getElementById('crafttable').classList.remove('open');
       updateHUD();
@@ -2175,8 +2223,8 @@
       if (fl) fl.style.height = (furnace.burnMax>0 ? Math.max(0,furnace.burn/furnace.burnMax)*100 : 0) + '%';
       const pr=document.getElementById('fn-prog');
       if (pr) pr.style.width = Math.min(100, furnace.cook/SMELT_TIME*100) + '%';
-      renderStorage(document.getElementById('fn-inv'), playerInv, playerInvCounts, 27, renderFurnaceUI);
-      renderStorage(document.getElementById('fn-hotbar'), hotbar, counts, 9, renderFurnaceUI);
+      renderStorage(document.getElementById('fn-inv'), playerInv, playerInvCounts, 27, renderFurnaceUI, playerInvDmg);
+      renderStorage(document.getElementById('fn-hotbar'), hotbar, counts, 9, renderFurnaceUI, hotbarDmg);
       updateCursorEl();
     }
     function openFurnace(){
@@ -2323,6 +2371,7 @@
             cnt.className = 'slot-count'; cnt.textContent = counts[i];
             slot.appendChild(cnt);
           }
+          const db = durabilityBar(bt, hotbarDmg[i]); if (db) slot.appendChild(db);
         }
         slot.addEventListener('click', () => { selectedSlot=i; updateHUD(); });
         hud.appendChild(slot);
@@ -2647,6 +2696,7 @@
               const itemDrop = BLOCK_DROP[droppedBlock];
               if (itemDrop) spawnDrop(itemDrop, cx, cy, cz);
               else spawnBlockDrop(droppedBlock, cx, cy, cz);
+              damageHeldTool(1); // tools wear out as you mine
             }
           }
         }
@@ -2679,6 +2729,7 @@
       get craftTableOpen(){ return craftTableOpen; }, takeCraftOutput, get cursor(){ return cursor; },
       SMELT, FUEL, furnIn, furnInCnt, furnFuel, furnFuelCnt, furnOut, furnOutCnt, furnace, furnaceTick, BLOCK_DROP,
       openFurnace, closeFurnace, renderFurnaceUI,
+      damageHeldTool, toolMaxDurability, hotbarDmg, counts, updateHUD,
       eat(){ eating.active=true; eating.t=0; }
     };
 
