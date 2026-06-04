@@ -343,6 +343,8 @@
     // ── Block types ───────────────────────────────────────────────
     const BLOCKS = { AIR:0, GRASS:1, DIRT:2, STONE:3, SAND:4, WOOD:5, LEAF:6, WATER:7, SNOW:8, GLASS:9, COBBLE:10, BRICK:11, PLANKS:12, GRAVEL:13, COAL:14 };
     const NUM_BLOCKS = 15;
+    // seconds to break each block type
+    const BREAK_TIME = { 0:0, 1:0.6, 2:0.6, 3:1.5, 4:0.5, 5:1.2, 6:0.3, 7:99, 8:0.5, 9:0.8, 10:1.8, 11:2.0, 12:1.0, 13:0.5, 14:1.5 };
 
     // face order: top, bottom, +x, -x, +z, -z
     const BLOCK_COLORS = {
@@ -994,20 +996,94 @@
       if (started&&!paused&&!inventoryOpen) document.body.requestPointerLock();
     });
 
+    // ── Mining state ─────────────────────────────────────────────
+    let mining = { active:false, bx:0, by:0, bz:0, progress:0, total:0 };
+
+    // Crack overlay mesh (single quad rendered in front of mined face)
+    const crackCanvas = document.createElement('canvas'); crackCanvas.width = crackCanvas.height = 16;
+    const crackCtx = crackCanvas.getContext('2d');
+    const crackTex = new THREE.CanvasTexture(crackCanvas);
+    crackTex.magFilter = crackTex.minFilter = THREE.NearestFilter;
+    crackTex.generateMipmaps = false;
+    const crackGeo = new THREE.PlaneGeometry(1.002, 1.002);
+    const crackMat = new THREE.MeshBasicMaterial({ map: crackTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
+    const crackMesh = new THREE.Mesh(crackGeo, crackMat);
+    crackMesh.visible = false;
+    scene.add(crackMesh);
+
+    function drawCrack(stage) {
+      // stage 0-9: draw pixelated crack pattern over 16x16
+      crackCtx.clearRect(0,0,16,16);
+      if (stage < 0) { crackTex.needsUpdate = true; return; }
+      const patterns = [
+        [[7,7]],
+        [[7,7],[6,8],[8,6]],
+        [[7,7],[5,8],[9,6],[8,9]],
+        [[7,7],[5,8],[9,6],[8,9],[6,5],[4,7]],
+        [[7,7],[5,5],[9,6],[8,9],[6,10],[3,8],[10,4]],
+        [[7,7],[5,5],[9,6],[8,9],[6,10],[3,8],[10,4],[4,4],[11,9]],
+        [[7,7],[5,5],[9,6],[8,9],[6,10],[3,8],[10,4],[4,4],[11,9],[2,11],[12,3]],
+        [[7,7],[5,5],[9,6],[8,9],[6,10],[3,8],[10,4],[4,4],[11,9],[2,11],[12,3],[1,6],[13,7]],
+        [[7,7],[5,5],[9,6],[8,9],[6,10],[3,8],[10,4],[4,4],[11,9],[2,11],[12,3],[1,6],[13,7],[6,2],[10,13]],
+        // stage 9: fill most pixels dark
+        null,
+      ];
+      if (stage === 9) {
+        // dense crack: checkerboard overlay
+        for (let px=0;px<16;px++) for (let py=0;py<16;py++) {
+          if ((px+py)%2===0) { crackCtx.fillStyle='rgba(0,0,0,0.55)'; crackCtx.fillRect(px,py,1,1); }
+        }
+        crackTex.needsUpdate = true; return;
+      }
+      const dots = patterns[stage];
+      crackCtx.fillStyle = 'rgba(0,0,0,0.7)';
+      dots.forEach(([x,y]) => {
+        crackCtx.fillRect(x-1,y-1,3,1);
+        crackCtx.fillRect(x,y-1,1,3);
+      });
+      crackTex.needsUpdate = true;
+    }
+
+    function updateCrackMesh(hit, stage) {
+      if (!hit || stage < 0) { crackMesh.visible = false; return; }
+      const off = 0.502;
+      const cx = hit.bx+0.5, cy = hit.by+0.5, cz = hit.bz+0.5;
+      const nx = hit.nx, ny = hit.ny, nz = hit.nz;
+      crackMesh.position.set(cx + nx*off, cy + ny*off, cz + nz*off);
+      if (ny !== 0) { crackMesh.rotation.set(-Math.PI/2 * ny, 0, 0); }
+      else if (nx !== 0) { crackMesh.rotation.set(0, Math.PI/2 * (nx > 0 ? 1 : -1), 0); }
+      else { crackMesh.rotation.set(0, nz < 0 ? Math.PI : 0, 0); }
+      crackMesh.visible = true;
+      drawCrack(stage);
+    }
+
     document.addEventListener('mousedown', e => {
       if (!started||paused||inventoryOpen||document.pointerLockElement!==document.body) return;
-      const hit = raycast(8);
-      if (!hit) return;
       if (e.button===0) {
-        setBlock(hit.bx,hit.by,hit.bz,BLOCKS.AIR);
-        rebuildChunksAround(hit.bx,hit.bz);
+        const hit = raycast(8);
+        if (!hit) return;
+        const bt = getBlock(hit.bx,hit.by,hit.bz);
+        mining.active = true;
+        mining.bx = hit.bx; mining.by = hit.by; mining.bz = hit.bz;
+        mining.fi = hit.fi;
+        mining.progress = 0;
+        mining.total = (BREAK_TIME[bt] ?? 1.0);
+        mining.hit = hit;
       } else if (e.button===2) {
+        const hit = raycast(8);
+        if (!hit) return;
         const nx=hit.bx+hit.nx, ny=hit.by+hit.ny, nz=hit.bz+hit.nz;
         const sel = hotbar[selectedSlot];
         if (sel && !playerOccupies(nx,ny,nz)) {
           setBlock(nx,ny,nz,sel);
           rebuildChunksAround(nx,nz);
         }
+      }
+    });
+    document.addEventListener('mouseup', e => {
+      if (e.button===0) {
+        mining.active = false;
+        crackMesh.visible = false;
       }
     });
     document.addEventListener('contextmenu', e => e.preventDefault());
@@ -1101,6 +1177,26 @@
 
       const ck=`${Math.floor(player.pos.x/CHUNK_SIZE)},${Math.floor(player.pos.z/CHUNK_SIZE)}`;
       if (ck!==lastChunk) { lastChunk=ck; updateChunksAround(player.pos.x,player.pos.z); }
+
+      // ── Mining tick ──────────────────────────────────────────────
+      if (mining.active) {
+        const curHit = raycast(8);
+        // cancel if player looks away
+        if (!curHit || curHit.bx!==mining.bx || curHit.by!==mining.by || curHit.bz!==mining.bz) {
+          mining.active = false;
+          crackMesh.visible = false;
+        } else {
+          mining.progress += dt;
+          const stage = Math.min(9, Math.floor(mining.progress / mining.total * 10));
+          updateCrackMesh(curHit, stage);
+          if (mining.progress >= mining.total) {
+            setBlock(mining.bx, mining.by, mining.bz, BLOCKS.AIR);
+            rebuildChunksAround(mining.bx, mining.bz);
+            mining.active = false;
+            crackMesh.visible = false;
+          }
+        }
+      }
 
       const hit=raycast(8);
       const sel=hotbar[selectedSlot];
