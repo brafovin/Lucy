@@ -39,6 +39,19 @@
       padding: 4px; border: 2px solid #555;
       image-rendering: pixelated;
     }
+    #stats {
+      position: fixed; bottom: 78px; left: 50%;
+      transform: translateX(-50%);
+      width: 504px; max-width: 90vw;
+      display: none; justify-content: space-between;
+      pointer-events: none; z-index: 40;
+      image-rendering: pixelated;
+    }
+    #stats.show { display: flex; }
+    #hearts, #hunger { display: flex; gap: 1px; }
+    #hunger { flex-direction: row-reverse; }
+    #stats canvas { width: 20px; height: 20px; image-rendering: pixelated;
+      filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.7)); }
     .slot {
       width: 52px; height: 52px;
       background: rgba(60,60,60,0.85);
@@ -298,6 +311,10 @@
 <body>
   <canvas id="canvas"></canvas>
   <div id="crosshair"></div>
+  <div id="stats">
+    <div id="hearts"></div>
+    <div id="hunger"></div>
+  </div>
   <div id="hud"></div>
   <div id="info"></div>
 
@@ -1222,6 +1239,73 @@
     }
 
     // ── HUD ───────────────────────────────────────────────────────
+    // ── Health & hunger ───────────────────────────────────────────
+    const MAX_HEARTS = 9;            // 9 hearts, 9 hunger
+    let health = MAX_HEARTS * 2;     // in half-units (full = 18)
+    let hunger = MAX_HEARTS * 2;
+
+    // pixel-art icon (8×8) with column split for half icons
+    const HEART_ROWS = [
+      '01100110',
+      '13322331',
+      '12222221',
+      '12222221',
+      '01222210',
+      '00122100',
+      '00011000',
+      '00000000',
+    ];
+    const DRUM_ROWS = [
+      '00000110',
+      '00001221',
+      '00012221',
+      '00122210',
+      '01222100',
+      '14221000',
+      '44110000',
+      '40000000',
+    ];
+    const HEART_RED  = { '1':'#5a0000', '2':'#e0202c', '3':'#ff6b78' };
+    const HEART_GRAY = { '1':'#1a1a1a', '2':'#4f4f4f', '3':'#6a6a6a' };
+    const DRUM_FULL  = { '1':'#3a2410', '2':'#a5641f', '3':'#c98a3a', '4':'#e9e6c8' };
+    const DRUM_GRAY  = { '1':'#1a1a1a', '2':'#4f4f4f', '3':'#6a6a6a', '4':'#7a7a7a' };
+
+    function makeIconCanvas(rows, palL, palR, split) {
+      const SC = 4, N = 8;
+      const c = document.createElement('canvas'); c.width = c.height = N*SC;
+      const ctx = c.getContext('2d');
+      for (let y=0;y<N;y++) for (let x=0;x<N;x++) {
+        const ch = rows[y][x];
+        if (ch==='0') continue;
+        const pal = x < split ? palL : palR;
+        const col = pal[ch]; if (!col) continue;
+        ctx.fillStyle = col; ctx.fillRect(x*SC, y*SC, SC, SC);
+      }
+      return c;
+    }
+    function renderStats() {
+      const hEl = document.getElementById('hearts');
+      const uEl = document.getElementById('hunger');
+      if (!hEl || !uEl) return;
+      hEl.innerHTML = ''; uEl.innerHTML = '';
+      for (let i=0;i<MAX_HEARTS;i++) {
+        const v = health - i*2; // 2=full,1=half,<=0 empty
+        let cv;
+        if (v >= 2)      cv = makeIconCanvas(HEART_ROWS, HEART_RED, HEART_RED, 8);
+        else if (v === 1) cv = makeIconCanvas(HEART_ROWS, HEART_RED, HEART_GRAY, 4);
+        else              cv = makeIconCanvas(HEART_ROWS, HEART_GRAY, HEART_GRAY, 8);
+        hEl.appendChild(cv);
+      }
+      for (let i=0;i<MAX_HEARTS;i++) {
+        const v = hunger - i*2;
+        let cv;
+        if (v >= 2)      cv = makeIconCanvas(DRUM_ROWS, DRUM_FULL, DRUM_FULL, 8);
+        else if (v === 1) cv = makeIconCanvas(DRUM_ROWS, DRUM_GRAY, DRUM_FULL, 4);
+        else              cv = makeIconCanvas(DRUM_ROWS, DRUM_GRAY, DRUM_GRAY, 8);
+        uEl.appendChild(cv);
+      }
+    }
+
     function updateHUD() {
       const hud = document.getElementById('hud');
       hud.innerHTML = '';
@@ -1784,6 +1868,8 @@
         } else {
           startScreen.style.display = 'none';
           started = true;
+          document.getElementById('stats').classList.add('show');
+          renderStats();
           lastChunk = `${Math.floor(player.pos.x/CHUNK_SIZE)},${Math.floor(player.pos.z/CHUNK_SIZE)}`;
           requestAnimationFrame(loop);
         }
