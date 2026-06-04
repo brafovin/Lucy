@@ -1051,8 +1051,8 @@
     // LEAVES
     TEX[_T.LEAF] = allFaces(ctx => {
       for(let y=0;y<16;y++) for(let x=0;x<16;x++){
-        const v=pxNoise(x,y,8);
-        ctx.fillStyle=addBrightness('#2d7a1a',(v*60-20)|0); ctx.fillRect(x,y,1,1);
+        const v=pxNoise(x,y);            // 0..1
+        ctx.fillStyle=addBrightness('#2d7a1a',(v*55-28)|0); ctx.fillRect(x,y,1,1);
       }
     });
 
