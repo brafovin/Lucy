@@ -403,8 +403,8 @@
         <input type="range" id="opt-render" min="1" max="5" value="3" style="width:100%;accent-color:#7ec850;">
         <div id="opt-render-lbl" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffee44;">3 Chunks</div>
         <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#aaa;margin-top:8px;margin-bottom:6px;">PIXEL-SKALIERUNG</div>
-        <input type="range" id="opt-pixel" min="1" max="6" value="2" style="width:100%;accent-color:#7ec850;">
-        <div id="opt-pixel-lbl" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffee44;">Stufe 2</div>
+        <input type="range" id="opt-pixel" min="1" max="6" value="1" style="width:100%;accent-color:#7ec850;">
+        <div id="opt-pixel-lbl" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffee44;">Stufe 1</div>
       </div>
 
       <div id="controls-hint">
@@ -510,7 +510,7 @@
     const GRAVITY      = -25;
     const JUMP_FORCE   = 10;
     const MOVE_SPEED   = 5;
-    const PIXEL_SCALE  = 2; // render at 1/PIXEL_SCALE resolution → pixelated look
+    const PIXEL_SCALE  = 1; // render at 1/PIXEL_SCALE resolution → pixelated look
 
     // ── Block types ───────────────────────────────────────────────
     const BLOCKS = { AIR:0, GRASS:1, DIRT:2, STONE:3, SAND:4, WOOD:5, LEAF:6, WATER:7, SNOW:8, GLASS:9, COBBLE:10, BRICK:11, PLANKS:12, GRAVEL:13, COAL:14, WERKBANK:15, IRON_ORE:16, GOLD_ORE:17, DIAMOND_ORE:18, OFEN:19 };
@@ -2932,7 +2932,7 @@
 
       // apply options
       const rd = renderSlider ? parseInt(renderSlider.value) : 3;
-      const ps = pixelSlider  ? parseInt(pixelSlider.value)  : 2;
+      const ps = pixelSlider  ? parseInt(pixelSlider.value)  : 1;
       renderer.setSize(Math.floor(innerWidth/ps), Math.floor(innerHeight/ps), false);
 
       const startScreen = document.getElementById('start-screen');
