@@ -336,6 +336,24 @@
     #ct-out .slot-icon { width:36px; height:36px; }
     .ct-inv { display:grid; grid-template-columns:repeat(9,36px); gap:2px; }
     .ct-hotbar { display:grid; grid-template-columns:repeat(9,36px); gap:2px; margin-top:6px; }
+    /* ── Furnace overlay ── */
+    #furnace {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none; align-items: center; justify-content: center;
+      z-index: 85; image-rendering: pixelated;
+    }
+    #furnace.open { display: flex; }
+    .fn-top { display:flex; align-items:center; gap:14px; margin-bottom:8px; padding:6px 20px; }
+    .fn-col { display:flex; flex-direction:column; align-items:center; gap:4px; }
+    .fn-col .inv-slot { width:40px; height:40px; }
+    .fn-flame-box { width:20px; height:20px; background:#555; position:relative; box-shadow: inset 1px 1px 0 #373737; }
+    .fn-flame { position:absolute; bottom:0; left:0; width:100%; height:0%;
+      background:linear-gradient(#f0a83a,#d86a1a); }
+    .fn-progbox { width:80px; height:14px; background:#555; position:relative; box-shadow: inset 1px 1px 0 #373737; }
+    .fn-prog { position:absolute; left:0; top:0; height:100%; width:0%; background:#cfcf6a; }
+    #fn-out { width:48px; height:48px; }
+    #fn-out .slot-icon { width:36px; height:36px; }
     /* held cursor item */
     #cursor-item {
       position: fixed; z-index: 120; pointer-events: none; display:none;
@@ -451,6 +469,25 @@
     </div>
   </div>
 
+  <!-- Furnace (Ofen) -->
+  <div id="furnace">
+    <div class="inv-window">
+      <div class="ct-title">Ofen</div>
+      <div class="fn-top">
+        <div class="fn-col">
+          <div class="inv-slot" id="fn-in" title="Schmelzgut"></div>
+          <div class="fn-flame-box"><div class="fn-flame" id="fn-flame"></div></div>
+          <div class="inv-slot" id="fn-fuel" title="Brennstoff"></div>
+        </div>
+        <div class="fn-progbox"><div class="fn-prog" id="fn-prog"></div></div>
+        <div class="inv-slot" id="fn-out" title="Ergebnis"></div>
+      </div>
+      <div class="ct-inv" id="fn-inv"></div>
+      <div class="inv-sep-line"></div>
+      <div class="ct-hotbar" id="fn-hotbar"></div>
+    </div>
+  </div>
+
   <div class="inv-tooltip" id="inv-tooltip"></div>
 
   <script type="importmap">
@@ -470,10 +507,10 @@
     const PIXEL_SCALE  = 4; // render at 1/PIXEL_SCALE resolution → pixelated look
 
     // ── Block types ───────────────────────────────────────────────
-    const BLOCKS = { AIR:0, GRASS:1, DIRT:2, STONE:3, SAND:4, WOOD:5, LEAF:6, WATER:7, SNOW:8, GLASS:9, COBBLE:10, BRICK:11, PLANKS:12, GRAVEL:13, COAL:14, WERKBANK:15 };
-    const NUM_BLOCKS = 16;
+    const BLOCKS = { AIR:0, GRASS:1, DIRT:2, STONE:3, SAND:4, WOOD:5, LEAF:6, WATER:7, SNOW:8, GLASS:9, COBBLE:10, BRICK:11, PLANKS:12, GRAVEL:13, COAL:14, WERKBANK:15, IRON_ORE:16, GOLD_ORE:17, DIAMOND_ORE:18, OFEN:19 };
+    const NUM_BLOCKS = 20;
     // seconds to break each block type
-    const BREAK_TIME = { 0:0, 1:0.6, 2:0.6, 3:1.5, 4:0.5, 5:1.2, 6:0.3, 7:99, 8:0.5, 9:0.8, 10:1.8, 11:2.0, 12:1.0, 13:0.5, 14:1.5, 15:1.0 };
+    const BREAK_TIME = { 0:0, 1:0.6, 2:0.6, 3:1.5, 4:0.5, 5:1.2, 6:0.3, 7:99, 8:0.5, 9:0.8, 10:1.8, 11:2.0, 12:1.0, 13:0.5, 14:1.5, 15:1.0, 16:2.2, 17:2.2, 18:2.5, 19:1.8 };
 
     // face order: top, bottom, +x, -x, +z, -z
     const BLOCK_COLORS = {
@@ -501,6 +538,8 @@
       [BLOCKS.BRICK]:'Ziegel', [BLOCKS.PLANKS]:'Holzdielen',
       [BLOCKS.GRAVEL]:'Kies', [BLOCKS.COAL]:'Kohleblock',
       [BLOCKS.WERKBANK]:'Werkbank',
+      [BLOCKS.IRON_ORE]:'Eisenerz', [BLOCKS.GOLD_ORE]:'Golderz',
+      [BLOCKS.DIAMOND_ORE]:'Diamanterz', [BLOCKS.OFEN]:'Ofen',
     };
     const ALL_PLACEABLE = [
       BLOCKS.GRASS, BLOCKS.DIRT, BLOCKS.STONE, BLOCKS.SAND,
@@ -522,14 +561,30 @@
     const isTool = id => id >= 200;
     const isBlockId = id => id > 0 && id < 100;
     // crafting materials (ids 150-199)
-    const MATERIALS = { STICK:150 };
-    const MATERIAL_NAMES = { 150:'Stock' };
+    const MATERIALS = { STICK:150, RAW_IRON:151, IRON_INGOT:152, RAW_GOLD:153, GOLD_INGOT:154, DIAMOND:155 };
+    const MATERIAL_NAMES = { 150:'Stock', 151:'Roheisen', 152:'Eisenbarren', 153:'Rohgold', 154:'Goldbarren', 155:'Diamant' };
+    // blocks that drop an item instead of themselves (ores)
+    const BLOCK_DROP = { 16:151, 17:153, 18:155 }; // iron→raw iron, gold→raw gold, diamond ore→diamond
+    const NUGGET_COL = { 151:['#b08868','#d8b8a0'], 153:['#caa030','#f0d060'] };  // raw chunk colours
+    const INGOT_COL  = { 152:['#c8c8c8','#f0f0f0'], 154:['#e8c040','#fff0a0'] };
     function makeMaterialIcon(id, size=38){
       const c=document.createElement('canvas'); c.width=c.height=size;
       const ctx=c.getContext('2d'); const N=16, SC=size/N;
-      const set=(x,y,col)=>{ctx.fillStyle=col; ctx.fillRect(Math.floor(x*SC),Math.floor(y*SC),Math.ceil(SC),Math.ceil(SC));};
+      const set=(x,y,col,w=1,h=1)=>{ctx.fillStyle=col; ctx.fillRect(Math.floor(x*SC),Math.floor(y*SC),Math.ceil(w*SC),Math.ceil(h*SC));};
       if (id===MATERIALS.STICK){ // diagonal brown stick
         for(let i=0;i<9;i++){ set(5+ (i*0.4|0),12-i,'#6b4f2a'); set(6+(i*0.4|0),12-i,'#4a3519'); }
+      } else if (NUGGET_COL[id]){ // raw ore chunk (rounded blob)
+        const [a,b]=NUGGET_COL[id];
+        set(6,4,a,4,2); set(4,6,a,8,4); set(5,10,a,6,2);
+        set(7,5,b,2,1); set(5,7,b,2,2);
+      } else if (INGOT_COL[id]){ // ingot bar (parallelogram)
+        const [a,b]=INGOT_COL[id];
+        set(4,7,a,9,4); set(5,6,a,8,1); set(3,11,a,9,1);
+        set(6,7,b,3,1);
+      } else if (id===MATERIALS.DIAMOND){ // teal gem
+        const a='#3fe0cf',b='#bff7ef';
+        set(7,4,a,2,1); set(5,5,a,6,2); set(4,7,a,8,2); set(5,9,a,6,2); set(7,11,a,2,1);
+        set(7,6,b,2,2);
       }
       return c;
     }
@@ -697,14 +752,34 @@
         { grid:[[M,M],[S,0],[S,0]],       out:{id:toolId('hoe',matIdx),count:1} }, // mirrored
       ];
     }
+    const II = MATERIALS.IRON_INGOT, GI = MATERIALS.GOLD_INGOT, DM = MATERIALS.DIAMOND;
     const RECIPES = [
       { shapeless:[W], out:{id:P,count:4} },                          // 1 Holz → 4 Dielen
       { grid:[[P],[P]], out:{id:S,count:4} },                          // 2 Dielen → 4 Stöcke
       { grid:[[P,P],[P,P]], out:{id:BLOCKS.WERKBANK,count:1} },        // 4 Dielen → Werkbank
+      // Ofen: 8 Kopfstein im Ring
+      { grid:[[BLOCKS.COBBLE,BLOCKS.COBBLE,BLOCKS.COBBLE],
+              [BLOCKS.COBBLE,0,BLOCKS.COBBLE],
+              [BLOCKS.COBBLE,BLOCKS.COBBLE,BLOCKS.COBBLE]], out:{id:BLOCKS.OFEN,count:1} },
       ...toolSet(P, 0),                                                // Holzwerkzeuge
       ...toolSet(BLOCKS.STONE, 1),                                     // Steinwerkzeuge (Stein)
       ...toolSet(BLOCKS.COBBLE, 1),                                    // Steinwerkzeuge (Kopfstein)
+      ...toolSet(II, 2),                                               // Eisenwerkzeuge
+      ...toolSet(GI, 3),                                               // Goldwerkzeuge
+      ...toolSet(DM, 4),                                               // Diamantwerkzeuge
     ];
+    // ── Smelting (furnace) ────────────────────────────────────────
+    const SMELT = {
+      [MATERIALS.RAW_IRON]: MATERIALS.IRON_INGOT,
+      [MATERIALS.RAW_GOLD]: MATERIALS.GOLD_INGOT,
+      [BLOCKS.SAND]:        BLOCKS.GLASS,
+      [BLOCKS.COBBLE]:      BLOCKS.STONE,
+    };
+    // fuel burn time in seconds per unit
+    const FUEL = {
+      [BLOCKS.COAL]: 80, [BLOCKS.WOOD]: 15, [BLOCKS.PLANKS]: 6, [MATERIALS.STICK]: 1,
+    };
+    const SMELT_TIME = 5; // seconds per item
     // trim all-zero borders → minimal 2D id array
     function trimGrid(ids, w, h){
       let minX=w,minY=h,maxX=-1,maxY=-1;
@@ -778,7 +853,14 @@
             let t;
             if (y === h)      t = h > SEA_LEVEL+14 ? BLOCKS.SNOW : h <= SEA_LEVEL ? BLOCKS.SAND : BLOCKS.GRASS;
             else if (y >= h-3) t = BLOCKS.DIRT;
-            else               t = hash(wx+y,wz+y) < 0.05 ? BLOCKS.COAL : BLOCKS.STONE;
+            else {
+              t = BLOCKS.STONE;
+              const ore = hash(wx+y*3, wz+y*7);     // stable per-voxel ore roll
+              if      (ore < 0.05) t = BLOCKS.COAL;
+              else if (ore < 0.085 && y < SEA_LEVEL-1)  t = BLOCKS.IRON_ORE;
+              else if (ore < 0.10  && y < SEA_LEVEL-6)  t = BLOCKS.GOLD_ORE;
+              else if (ore < 0.115 && y < SEA_LEVEL-12) t = BLOCKS.DIAMOND_ORE;
+            }
             setBlock(wx,y,wz,t);
           }
           // gravel patches near sea
@@ -1062,6 +1144,47 @@
         ctx.fillRect(11,8,3,3);
       }
     );
+
+    // ORES: stone base with coloured mineral specks
+    function oreTex(specks){
+      return allFaces(ctx => {
+        fillNoise(ctx,'#888',18,5);
+        ctx.fillStyle='#666';
+        [[3,2,1,5],[8,0,1,4],[0,8,6,1]].forEach(([x,y,w,h])=>ctx.fillRect(x,y,w,h));
+        const spots=[[3,3],[9,4],[5,9],[11,10],[2,11],[12,2],[7,7]];
+        spots.forEach(([x,y],i)=>{
+          ctx.fillStyle=specks[0]; ctx.fillRect(x,y,2,2);
+          ctx.fillStyle=specks[1]; ctx.fillRect(x,y,1,1);
+        });
+      });
+    }
+    TEX[_T.IRON_ORE]    = oreTex(['#c8a890','#e8d0c0']);
+    TEX[_T.GOLD_ORE]    = oreTex(['#e8c040','#fff0a0']);
+    TEX[_T.DIAMOND_ORE] = oreTex(['#3fe0cf','#bff7ef']);
+
+    // OFEN (furnace): cobble body, dark arched opening on front (-z)
+    function cobbleBase(ctx){
+      fillNoise(ctx,'#7a7a7a',14,5);
+      ctx.fillStyle='#5e5e5e';
+      [[1,1,4,3],[6,2,5,2],[12,1,3,4],[2,6,3,4],[7,7,6,3],[1,11,5,4],[10,11,5,3]].forEach(([x,y,w,h])=>ctx.fillRect(x,y,w,h));
+    }
+    TEX[_T.OFEN] = (function(){
+      const front = mkTex(ctx=>{
+        cobbleBase(ctx);
+        ctx.fillStyle='#2a2a2a'; ctx.fillRect(4,5,8,8);       // opening
+        ctx.fillStyle='#1a1a1a'; ctx.fillRect(5,7,6,6);
+        ctx.fillStyle='#d86a1a'; ctx.fillRect(6,10,4,3);      // embers
+        ctx.fillStyle='#f0a83a'; ctx.fillRect(7,11,2,2);
+        ctx.fillStyle='#555'; ctx.fillRect(4,4,8,1);          // lintel
+      }, FACE_BRIGHT[5]);
+      const side = mkTex(cobbleBase, FACE_BRIGHT[2]);
+      const top  = mkTex(ctx=>{ cobbleBase(ctx); ctx.fillStyle='#444'; ctx.fillRect(4,4,8,8); }, FACE_BRIGHT[0]);
+      const bot  = mkTex(cobbleBase, FACE_BRIGHT[1]);
+      // order: +x,-x,+y,-y,+z,-z  → front is -z
+      return [top, bot,
+              mkTex(cobbleBase,FACE_BRIGHT[2]), mkTex(cobbleBase,FACE_BRIGHT[3]),
+              mkTex(cobbleBase,FACE_BRIGHT[4]), front];
+    })();
 
     // transparent blocks
     const TRANSPARENT_BLOCKS = new Set([_T.WATER, _T.GLASS]);
@@ -1561,7 +1684,7 @@
     const drops = [];
     function spawnDrop(id, x, y, z){
       const g = new THREE.BoxGeometry(0.3,0.3,0.3);
-      const tex = new THREE.CanvasTexture(makeItemIcon(id, 16));
+      const tex = new THREE.CanvasTexture(makeIcon(id, 16));
       tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps=false;
       const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({map:tex}));
       mesh.position.set(x, y+0.3, z);
@@ -2006,6 +2129,73 @@
       document.body.requestPointerLock();
     }
 
+    // ── Furnace (Ofen) ────────────────────────────────────────────
+    const furnIn=[0], furnInCnt=[0], furnFuel=[0], furnFuelCnt=[0], furnOut=[0], furnOutCnt=[0];
+    const furnace = { burn:0, burnMax:0, cook:0 };
+    let furnaceOpen=false, furnaceInterval=null, furnaceLast=0;
+    function furnaceTick(dt){
+      const inId=furnIn[0];
+      const res = inId ? SMELT[inId] : null;
+      const canSmelt = res!=null && furnInCnt[0]>0 && (furnOut[0]===0 || furnOut[0]===res);
+      if (furnace.burn<=0 && canSmelt && furnFuel[0] && FUEL[furnFuel[0]]){
+        furnace.burnMax = FUEL[furnFuel[0]];
+        furnace.burn = furnace.burnMax;
+        furnFuelCnt[0]--; if(furnFuelCnt[0]<=0) furnFuel[0]=0;
+      }
+      if (furnace.burn>0){
+        furnace.burn -= dt;
+        if (canSmelt){
+          furnace.cook += dt;
+          if (furnace.cook >= SMELT_TIME){
+            furnace.cook = 0;
+            furnInCnt[0]--; if(furnInCnt[0]<=0) furnIn[0]=0;
+            if (furnOut[0]===0){ furnOut[0]=res; furnOutCnt[0]=1; } else furnOutCnt[0]++;
+          }
+        } else furnace.cook = Math.max(0, furnace.cook - dt*2);
+      } else furnace.cook = Math.max(0, furnace.cook - dt*2);
+      if (furnaceOpen) renderFurnaceUI();
+    }
+    function renderFurnaceUI(){
+      renderStorage(document.getElementById('fn-in'), furnIn, furnInCnt, 1, renderFurnaceUI);
+      renderStorage(document.getElementById('fn-fuel'), furnFuel, furnFuelCnt, 1, renderFurnaceUI);
+      // output: pickup-only
+      const outEl=document.getElementById('fn-out');
+      if (outEl){
+        outEl.innerHTML='';
+        if (furnOut[0]){
+          const icon=makeIcon(furnOut[0],28); icon.className='slot-icon'; outEl.appendChild(icon);
+          if (furnOutCnt[0]>1){ const c=document.createElement('div'); c.className='item-count'; c.textContent=furnOutCnt[0]; outEl.appendChild(c); }
+          tooltipify(outEl, furnOut[0]);
+        }
+        outEl.onclick=()=>{ clickSlot(furnOut, furnOutCnt, 0, false); renderFurnaceUI(); updateHUD(); };
+        outEl.oncontextmenu=(e)=>{ e.preventDefault(); };
+      }
+      // flame + progress bars
+      const fl=document.getElementById('fn-flame');
+      if (fl) fl.style.height = (furnace.burnMax>0 ? Math.max(0,furnace.burn/furnace.burnMax)*100 : 0) + '%';
+      const pr=document.getElementById('fn-prog');
+      if (pr) pr.style.width = Math.min(100, furnace.cook/SMELT_TIME*100) + '%';
+      renderStorage(document.getElementById('fn-inv'), playerInv, playerInvCounts, 27, renderFurnaceUI);
+      renderStorage(document.getElementById('fn-hotbar'), hotbar, counts, 9, renderFurnaceUI);
+      updateCursorEl();
+    }
+    function openFurnace(){
+      furnaceOpen=true; renderFurnaceUI();
+      document.getElementById('furnace').classList.add('open');
+      document.exitPointerLock();
+      furnaceLast=performance.now();
+      furnaceInterval=setInterval(()=>{ const n=performance.now(); furnaceTick((n-furnaceLast)/1000); furnaceLast=n; }, 120);
+    }
+    function closeFurnace(){
+      furnaceOpen=false;
+      if (furnaceInterval){ clearInterval(furnaceInterval); furnaceInterval=null; }
+      returnGrid(furnIn, furnInCnt); returnGrid(furnFuel, furnFuelCnt); returnGrid(furnOut, furnOutCnt);
+      returnCursor();
+      document.getElementById('furnace').classList.remove('open');
+      updateHUD();
+      document.body.requestPointerLock();
+    }
+
     // ── HUD ───────────────────────────────────────────────────────
     // ── Health & hunger ───────────────────────────────────────────
     const MAX_HEARTS = 9;            // 9 hearts, 9 hunger
@@ -2150,6 +2340,10 @@
         if (e.code==='KeyE'||e.code==='Escape') closeCraftTable();
         return;
       }
+      if (furnaceOpen) {
+        if (e.code==='KeyE'||e.code==='Escape') closeFurnace();
+        return;
+      }
       // double-tap W to start sprinting
       if (e.code==='KeyW' && !keys['KeyW']) {
         const t = performance.now();
@@ -2169,20 +2363,20 @@
     });
 
     document.addEventListener('mousemove', e => {
-      if (!started||paused||inventoryOpen||craftTableOpen||document.pointerLockElement!==document.body) return;
+      if (!started||paused||inventoryOpen||craftTableOpen||furnaceOpen||document.pointerLockElement!==document.body) return;
       player.yaw   -= e.movementX*0.002;
       player.pitch -= e.movementY*0.002;
       player.pitch  = Math.max(-Math.PI/2+0.01, Math.min(Math.PI/2-0.01, player.pitch));
     });
 
     document.addEventListener('wheel', e => {
-      if (inventoryOpen||craftTableOpen||paused) return;
+      if (inventoryOpen||craftTableOpen||furnaceOpen||paused) return;
       selectedSlot = (selectedSlot+(e.deltaY>0?1:-1)+9)%9;
       updateHUD();
     });
 
     document.body.addEventListener('click', () => {
-      if (started&&!paused&&!inventoryOpen&&!craftTableOpen) document.body.requestPointerLock();
+      if (started&&!paused&&!inventoryOpen&&!craftTableOpen&&!furnaceOpen) document.body.requestPointerLock();
     });
 
     // ── Mining state ─────────────────────────────────────────────
@@ -2247,7 +2441,7 @@
     }
 
     document.addEventListener('mousedown', e => {
-      if (!started||paused||inventoryOpen||craftTableOpen||document.pointerLockElement!==document.body) return;
+      if (!started||paused||inventoryOpen||craftTableOpen||furnaceOpen||document.pointerLockElement!==document.body) return;
       if (e.button===0) {
         startSwing();
         // attacking a mob takes priority over mining a block
@@ -2270,8 +2464,10 @@
         }
         const hit = raycast(8);
         if (!hit) return;
-        // right-clicking a Werkbank opens the 3×3 crafting table
-        if (getBlock(hit.bx,hit.by,hit.bz) === BLOCKS.WERKBANK) { openCraftTable(); return; }
+        // right-clicking a Werkbank/Ofen opens its UI
+        const tgt = getBlock(hit.bx,hit.by,hit.bz);
+        if (tgt === BLOCKS.WERKBANK) { openCraftTable(); return; }
+        if (tgt === BLOCKS.OFEN) { openFurnace(); return; }
         const nx=hit.bx+hit.nx, ny=hit.by+hit.ny, nz=hit.bz+hit.nz;
         if (isBlockId(sel) && !playerOccupies(nx,ny,nz)) {
           setBlock(nx,ny,nz,sel);
@@ -2358,7 +2554,7 @@
     let lastTime = performance.now(), lastChunk = '';
     function loop() {
       requestAnimationFrame(loop);
-      if (!started||paused||inventoryOpen||craftTableOpen) return;
+      if (!started||paused||inventoryOpen||craftTableOpen||furnaceOpen) return;
       const now=performance.now(), dt=Math.min((now-lastTime)/1000,0.05);
       lastTime=now;
 
@@ -2445,9 +2641,13 @@
             rebuildChunksAround(mining.bx, mining.bz);
             mining.active = false;
             crackMesh.visible = false;
-            // drop block as pickup (use block id as item id for non-food)
-            if (droppedBlock && droppedBlock !== BLOCKS.AIR)
-              spawnBlockDrop(droppedBlock, mining.bx+0.5, mining.by+0.5, mining.bz+0.5);
+            // drop pickup: ores drop items, other blocks drop the block
+            if (droppedBlock && droppedBlock !== BLOCKS.AIR) {
+              const cx=mining.bx+0.5, cy=mining.by+0.5, cz=mining.bz+0.5;
+              const itemDrop = BLOCK_DROP[droppedBlock];
+              if (itemDrop) spawnDrop(itemDrop, cx, cy, cz);
+              else spawnBlockDrop(droppedBlock, cx, cy, cz);
+            }
           }
         }
       }
@@ -2477,6 +2677,8 @@
       attackMob, addItem, killMob, toolInfo, miningSpeed, attackDamage, makeToolIcon, ALL_TOOLS,
       matchRecipe, RECIPES, MATERIALS, craft3, craft3Cnt, openCraftTable, setBlock,
       get craftTableOpen(){ return craftTableOpen; }, takeCraftOutput, get cursor(){ return cursor; },
+      SMELT, FUEL, furnIn, furnInCnt, furnFuel, furnFuelCnt, furnOut, furnOutCnt, furnace, furnaceTick, BLOCK_DROP,
+      openFurnace, closeFurnace, renderFurnaceUI,
       eat(){ eating.active=true; eating.t=0; }
     };
 
