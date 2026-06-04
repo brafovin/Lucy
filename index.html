@@ -989,6 +989,152 @@
       avatarParts.armL.rotation.x = -sw;
       avatarParts.armR.rotation.x =  sw;
     }
+
+    // ── Mobs (pig / cow / sheep) ──────────────────────────────────
+    const mobs = [];
+    function cmat(c){ return new THREE.MeshBasicMaterial({ color: c }); }
+    function shadeHex(hex, amt){
+      const n = parseInt(hex.slice(1),16);
+      let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+      r=Math.max(0,Math.min(255,r+amt*255));g=Math.max(0,Math.min(255,g+amt*255));b=Math.max(0,Math.min(255,b+amt*255));
+      return `rgb(${r|0},${g|0},${b|0})`;
+    }
+    // shaded box: top brightest, bottom darkest, sides mid
+    function cbox(w,h,d, col){
+      const g = new THREE.BoxGeometry(w,h,d);
+      const side = cmat(shadeHex(col,-0.08));
+      return new THREE.Mesh(g, [side, side, cmat(col), cmat(shadeHex(col,-0.3)), side, side]);
+    }
+
+    const MOB_DEFS = {
+      pig:   { body:'#e89aa6', head:'#e89aa6', leg:'#d98090', snout:'#d3737f', bw:0.55,bh:0.5,bd:0.85, hsz:0.42, hp:6 },
+      cow:   { body:'#5a4632', head:'#4a3826', leg:'#43331f', snout:'#caa', spots:'#1e1812', bw:0.6,bh:0.6,bd:1.0, hsz:0.46, hp:10 },
+      sheep: { body:'#ececec', head:'#d8cfc4', leg:'#7a6a5c', snout:null, bw:0.6,bh:0.62,bd:0.95, hsz:0.4, hp:8, wool:true },
+    };
+
+    function buildMobMesh(type) {
+      const D = MOB_DEFS[type];
+      const grp = new THREE.Group();
+      // body (length along -z is "forward"/head end). center body at y so legs reach ground.
+      const legLen = 0.42, legW = 0.18;
+      const bodyY = legLen + D.bh/2;
+      const body = cbox(D.bw, D.bh, D.bd, D.body);
+      body.position.y = bodyY;
+      grp.add(body);
+      // cow/sheep body spots/wool accents
+      if (type==='cow') {
+        const spot = cbox(0.22,0.02,0.3, D.spots); spot.position.set(0.15, bodyY+D.bh/2-0.01, 0.1); grp.add(spot);
+        const spot2= cbox(0.18,0.02,0.22, D.spots); spot2.position.set(-0.18, bodyY+D.bh/2-0.01, -0.15); grp.add(spot2);
+      }
+      if (type==='sheep') {
+        // fluffy wool overlay slightly bigger
+        const wool = cbox(D.bw+0.12, D.bh+0.12, D.bd+0.06, '#f6f6f6'); wool.position.y = bodyY; grp.add(wool);
+      }
+      // head at front (-z)
+      const headGrp = new THREE.Group();
+      const head = cbox(D.hsz, D.hsz, D.hsz, D.head); head.position.set(0,0,0);
+      headGrp.add(head);
+      // snout
+      if (D.snout) { const sn = cbox(D.hsz*0.5, D.hsz*0.4, 0.12, D.snout); sn.position.set(0,-D.hsz*0.1,-D.hsz/2-0.05); headGrp.add(sn); }
+      // eyes
+      const eyeL = cbox(0.06,0.06,0.02,'#222'); eyeL.position.set(-D.hsz*0.28, D.hsz*0.12, -D.hsz/2-0.005);
+      const eyeR = eyeL.clone(); eyeR.position.x = D.hsz*0.28;
+      headGrp.add(eyeL, eyeR);
+      // ears (cow horns / pig+sheep ears)
+      if (type==='cow') {
+        const hL = cbox(0.07,0.07,0.07,'#d8d2c0'); hL.position.set(-D.hsz*0.4,D.hsz*0.45,0); const hR=hL.clone(); hR.position.x=D.hsz*0.4; headGrp.add(hL,hR);
+      } else {
+        const eL = cbox(0.1,0.12,0.04, D.head); eL.position.set(-D.hsz*0.45,D.hsz*0.35,0); const eR=eL.clone(); eR.position.x=D.hsz*0.45; headGrp.add(eL,eR);
+      }
+      headGrp.position.set(0, bodyY + D.bh*0.15, -D.bd/2 - D.hsz*0.25);
+      grp.add(headGrp);
+      // 4 legs at corners, pivot at top
+      function leg(x,z){
+        const m = cbox(legW, legLen, legW, D.leg);
+        const g = new THREE.Group(); m.position.y = -legLen/2; g.add(m);
+        g.position.set(x, legLen, z);
+        return g;
+      }
+      const lx = D.bw/2 - legW/2, lz = D.bd/2 - legW/2;
+      const legs = [ leg(-lx,-lz), leg(lx,-lz), leg(-lx,lz), leg(lx,lz) ]; // FL,FR,BL,BR
+      legs.forEach(l=>grp.add(l));
+      return { grp, legs, headGrp };
+    }
+
+    // top solid surface y at a column
+    function groundTop(x,z){
+      const xi=Math.floor(x), zi=Math.floor(z);
+      for (let y=WORLD_HEIGHT-1; y>=0; y--) if (isSolid(xi,y,zi)) return y+1;
+      return 0;
+    }
+
+    function spawnMob(type, x, z){
+      const m = buildMobMesh(type);
+      const y = groundTop(x,z);
+      m.grp.position.set(x+0.5, y, z+0.5);
+      const mob = {
+        type, parts:m, pos:m.grp.position,
+        yaw: Math.random()*Math.PI*2,
+        state:'idle', timer: 1+Math.random()*3,
+        legPhase:0, speed:0, vy:0,
+        hp: MOB_DEFS[type].hp,
+      };
+      m.grp.rotation.y = mob.yaw;
+      scene.add(m.grp);
+      mobs.push(mob);
+      return mob;
+    }
+
+    function spawnInitialMobs(){
+      const types = ['pig','cow','sheep'];
+      const cx = Math.floor(player.pos.x), cz = Math.floor(player.pos.z);
+      let placed = 0, tries = 0;
+      while (placed < 9 && tries < 200) {
+        tries++;
+        const x = cx + (Math.random()*40-20)|0;
+        const z = cz + (Math.random()*40-20)|0;
+        const y = groundTop(x,z);
+        const top = getBlock(Math.floor(x), y-1, Math.floor(z));
+        if (y > SEA_LEVEL && (top===BLOCKS.GRASS || top===BLOCKS.DIRT || top===BLOCKS.SNOW)) {
+          spawnMob(types[placed % 3], x, z);
+          placed++;
+        }
+      }
+    }
+
+    function updateMobs(dt){
+      for (const mob of mobs){
+        // simple wander AI
+        mob.timer -= dt;
+        if (mob.timer <= 0){
+          if (mob.state==='walk'){ mob.state='idle'; mob.timer=1+Math.random()*3; mob.speed=0; }
+          else { mob.state='walk'; mob.timer=2+Math.random()*4; mob.yaw += (Math.random()-0.5)*2; mob.speed=1.1; }
+        }
+        if (mob.state==='walk'){
+          const fx = -Math.sin(mob.yaw), fz = -Math.cos(mob.yaw);
+          const nx = mob.pos.x + fx*mob.speed*dt, nz = mob.pos.z + fz*mob.speed*dt;
+          const curG = groundTop(mob.pos.x, mob.pos.z);
+          const nextG = groundTop(nx, nz);
+          if (Math.abs(nextG - curG) <= 1.01){ mob.pos.x = nx; mob.pos.z = nz; }
+          else { mob.yaw += 2.2; mob.timer = Math.min(mob.timer, 0.3); } // blocked → turn
+          mob.legPhase += dt*7;
+        } else {
+          mob.legPhase *= 0.85;
+        }
+        // gravity / stick to ground surface
+        const g = groundTop(mob.pos.x, mob.pos.z);
+        mob.pos.y += (g - mob.pos.y) * Math.min(1, dt*10);
+        mob.parts.grp.rotation.y = mob.yaw;
+        // animate legs (diagonal gait)
+        const sw = Math.sin(mob.legPhase) * (mob.state==='walk'?0.7:0);
+        const L = mob.parts.legs;
+        L[0].rotation.x =  sw; L[3].rotation.x =  sw;  // FL, BR
+        L[1].rotation.x = -sw; L[2].rotation.x = -sw;  // FR, BL
+        // idle head bob
+        mob.parts.headGrp.rotation.x = Math.sin(mob.legPhase*0.5)*0.05;
+      }
+    }
+
     let paused = false;
     let started = false;
     let inventoryOpen = false;
@@ -1597,6 +1743,7 @@
       lastOnGround = player.onGround;
 
       updateAvatar(dt);
+      updateMobs(dt);
       camera.rotation.order='YXZ'; camera.rotation.y=player.yaw; camera.rotation.x=player.pitch;
       if (thirdPerson) {
         // orbit camera behind the player
@@ -1657,7 +1804,8 @@
       getBlock, raycast, terrainHeight, BLOCKS, render(){ renderer.render(scene,camera); },
       setThirdPerson(v){ thirdPerson = v; }, get avatar(){ return avatar; },
       get sprinting(){ return sprinting; }, get vel(){ return player.vel; },
-      get health(){ return health; }, get onGround(){ return player.onGround; }
+      get health(){ return health; }, get onGround(){ return player.onGround; },
+      get mobs(){ return mobs; }
     };
 
     // ── Pixelated start-screen background ────────────────────────
@@ -1915,6 +2063,7 @@
           document.getElementById('stats').classList.add('show');
           renderStats();
           lastOnGround = false; fallPeakY = player.pos.y;
+          spawnInitialMobs();
           lastChunk = `${Math.floor(player.pos.x/CHUNK_SIZE)},${Math.floor(player.pos.z/CHUNK_SIZE)}`;
           requestAnimationFrame(loop);
         }
