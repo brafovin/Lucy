@@ -7,284 +7,383 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-    #canvas { display: block; }
+
+    /* ── Pixelated canvas ── */
+    #canvas {
+      display: block;
+      width: 100vw; height: 100vh;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
     #crosshair {
       position: fixed; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      pointer-events: none; color: white;
-      font-size: 24px; text-shadow: 1px 1px 2px black;
+      pointer-events: none;
+      width: 20px; height: 20px;
     }
+    #crosshair::before, #crosshair::after {
+      content: ''; position: absolute;
+      background: rgba(255,255,255,0.9);
+      box-shadow: 1px 1px 0 rgba(0,0,0,0.6);
+    }
+    #crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
+    #crosshair::after  { height: 2px; width: 100%; top: 50%; transform: translateY(-50%); }
+
+    /* ── Hotbar ── */
     #hud {
-      position: fixed; bottom: 20px; left: 50%;
+      position: fixed; bottom: 16px; left: 50%;
       transform: translateX(-50%);
-      display: flex; gap: 4px;
+      display: flex; gap: 3px;
+      background: rgba(0,0,0,0.5);
+      padding: 4px; border: 2px solid #555;
+      image-rendering: pixelated;
     }
     .slot {
-      width: 50px; height: 50px;
-      background: rgba(0,0,0,0.6);
-      border: 2px solid #555;
-      border-radius: 4px;
+      width: 52px; height: 52px;
+      background: rgba(60,60,60,0.85);
+      border: 2px solid #666;
       display: flex; align-items: center; justify-content: center;
-      cursor: pointer; transition: border-color 0.1s;
+      cursor: pointer; position: relative;
     }
-    .slot.active { border-color: #fff; }
+    .slot.active { border: 2px solid #fff; }
     .slot-icon {
-      width: 36px; height: 36px;
-      border-radius: 3px;
+      width: 38px; height: 38px;
+      image-rendering: pixelated;
+      flex-shrink: 0;
     }
+    .slot-num {
+      position: absolute; top: 2px; left: 4px;
+      font-size: 9px; color: #ccc;
+      line-height: 1;
+    }
+
     #info {
-      position: fixed; top: 10px; left: 10px;
-      color: white; font-size: 13px;
-      text-shadow: 1px 1px 2px black;
-      line-height: 1.6;
+      position: fixed; top: 8px; left: 8px;
+      color: white; font-size: 12px;
+      text-shadow: 1px 1px 0 #000;
+      line-height: 1.7;
     }
+
+    /* ── Start screen ── */
     #start-screen {
       position: fixed; inset: 0;
-      background: rgba(0,0,0,0.85);
+      background: rgba(0,0,0,0.88);
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      color: white; z-index: 100;
+      color: white; z-index: 200;
     }
     #start-screen h1 {
-      font-size: 48px; margin-bottom: 16px;
-      text-shadow: 3px 3px 0 #555;
-      letter-spacing: 4px;
+      font-size: 52px; margin-bottom: 14px;
+      text-shadow: 4px 4px 0 #333;
+      letter-spacing: 6px; color: #7ec850;
     }
-    #start-screen p { font-size: 16px; margin-bottom: 8px; color: #aaa; }
+    #start-screen p { font-size: 14px; margin-bottom: 6px; color: #aaa; }
     #start-btn {
-      margin-top: 24px; padding: 12px 36px;
-      font-size: 20px; background: #4a4;
-      color: white; border: none; border-radius: 6px;
+      margin-top: 28px; padding: 12px 40px;
+      font-size: 18px; background: #4a7a1e;
+      color: white; border: 3px solid #6ab030;
       cursor: pointer; font-family: inherit;
-      letter-spacing: 2px;
+      letter-spacing: 2px; text-transform: uppercase;
     }
-    #start-btn:hover { background: #5b5; }
+    #start-btn:hover { background: #5b9a28; }
+
+    /* ── Pause ── */
     #paused {
       position: fixed; inset: 0;
-      background: rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.55);
       display: none; align-items: center; justify-content: center;
-      color: white; font-size: 32px; z-index: 50;
+      flex-direction: column; gap: 16px;
+      color: white; font-size: 28px; z-index: 50;
+      text-shadow: 2px 2px 0 #000;
+    }
+    #paused p { font-size: 14px; color: #aaa; }
+
+    /* ── Inventory overlay ── */
+    #inventory {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: none; align-items: center; justify-content: center;
+      z-index: 80;
+    }
+    #inventory.open { display: flex; }
+    .inv-window {
+      background: #8b8b8b;
+      border: 3px solid #373737;
+      padding: 12px;
+      box-shadow: 4px 4px 0 #000;
+      min-width: 340px;
+    }
+    .inv-title {
+      color: #3f3f3f; font-size: 13px;
+      margin-bottom: 10px; letter-spacing: 1px;
+      text-shadow: 1px 1px 0 #aaa;
+    }
+    .inv-grid {
+      display: grid; grid-template-columns: repeat(9, 44px);
+      gap: 3px; margin-bottom: 10px;
+    }
+    .inv-slot {
+      width: 44px; height: 44px;
+      background: #8b8b8b;
+      border-top: 2px solid #373737;
+      border-left: 2px solid #373737;
+      border-bottom: 2px solid #fff;
+      border-right: 2px solid #fff;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; position: relative;
+    }
+    .inv-slot:hover { background: #a0a0a0; }
+    .inv-slot.inv-active {
+      border-top: 2px solid #fff;
+      border-left: 2px solid #fff;
+      border-bottom: 2px solid #373737;
+      border-right: 2px solid #373737;
+      background: #9a9a9a;
+    }
+    .inv-slot .slot-icon {
+      width: 32px; height: 32px;
+    }
+    .inv-slot .item-count {
+      position: absolute; bottom: 2px; right: 3px;
+      font-size: 10px; color: #fff;
+      text-shadow: 1px 1px 0 #000;
+    }
+    .inv-sep {
+      border-top: 2px solid #373737;
+      border-bottom: 1px solid #fff;
+      margin: 6px 0;
+    }
+    .inv-hotbar-row {
+      display: grid; grid-template-columns: repeat(9, 44px);
+      gap: 3px;
+    }
+    .inv-label { font-size: 10px; color: #3f3f3f; margin-bottom: 4px; }
+    .inv-tooltip {
+      position: fixed; background: rgba(16,0,16,0.9);
+      border: 1px solid #555; color: #fff; font-size: 12px;
+      padding: 4px 8px; pointer-events: none; z-index: 99; display: none;
+      text-shadow: 1px 1px 0 #000;
     }
   </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
-  <div id="crosshair">+</div>
+  <div id="crosshair"></div>
   <div id="hud"></div>
   <div id="info"></div>
+
   <div id="start-screen">
-    <h1>⛏ MINECRAFT</h1>
+    <h1>MINECRAFT</h1>
     <p>WASD — Bewegen &nbsp;|&nbsp; Maus — Umsehen</p>
     <p>Leertaste — Springen &nbsp;|&nbsp; Shift — Ducken</p>
     <p>Linksklick — Block abbauen &nbsp;|&nbsp; Rechtsklick — Block setzen</p>
-    <p>1-7 — Block auswählen &nbsp;|&nbsp; Scroll — Block wechseln</p>
-    <p>ESC — Pause</p>
-    <button id="start-btn">SPIELEN</button>
+    <p>1–9 — Slot wählen &nbsp;|&nbsp; Scroll — Slot wechseln</p>
+    <p><b>E</b> — Inventar öffnen &nbsp;|&nbsp; ESC — Pause</p>
+    <button id="start-btn">Spielen</button>
   </div>
-  <div id="paused">⏸ PAUSIERT — ESC zum Fortfahren</div>
+
+  <div id="paused">
+    ⏸ PAUSE
+    <p>ESC — Fortfahren</p>
+  </div>
+
+  <div id="inventory">
+    <div class="inv-window">
+      <div class="inv-title">INVENTAR</div>
+      <div class="inv-label">Alle Blöcke</div>
+      <div class="inv-grid" id="inv-grid"></div>
+      <div class="inv-sep"></div>
+      <div class="inv-label">Hotbar (klicken zum Belegen)</div>
+      <div class="inv-hotbar-row" id="inv-hotbar"></div>
+    </div>
+  </div>
+  <div class="inv-tooltip" id="inv-tooltip"></div>
 
   <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js"
-    }
-  }
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js" } }
   </script>
   <script type="module">
     import * as THREE from 'three';
 
-    // ── Constants ────────────────────────────────────────────────
+    // ── Constants ─────────────────────────────────────────────────
     const CHUNK_SIZE   = 16;
     const WORLD_HEIGHT = 32;
     const SEA_LEVEL    = 8;
-    const RENDER_DIST  = 3;   // chunks in each direction
+    const RENDER_DIST  = 3;
     const GRAVITY      = -25;
     const JUMP_FORCE   = 10;
     const MOVE_SPEED   = 5;
+    const PIXEL_SCALE  = 4; // render at 1/PIXEL_SCALE resolution → pixelated look
 
-    // Block types
-    const BLOCKS = {
-      AIR:   0,
-      GRASS: 1,
-      DIRT:  2,
-      STONE: 3,
-      SAND:  4,
-      WOOD:  5,
-      LEAF:  6,
-      WATER: 7,
-      SNOW:  8,
-      GLASS: 9,
-    };
+    // ── Block types ───────────────────────────────────────────────
+    const BLOCKS = { AIR:0, GRASS:1, DIRT:2, STONE:3, SAND:4, WOOD:5, LEAF:6, WATER:7, SNOW:8, GLASS:9, COBBLE:10, BRICK:11, PLANKS:12, GRAVEL:13, COAL:14 };
+    const NUM_BLOCKS = 15;
 
+    // face order: top, bottom, +x, -x, +z, -z
     const BLOCK_COLORS = {
-      [BLOCKS.GRASS]: ['#5a9e3a','#5a9e3a','#7a5c2e','#7a5c2e','#7a5c2e','#7a5c2e'],
-      [BLOCKS.DIRT]:  ['#7a5c2e','#7a5c2e','#7a5c2e','#7a5c2e','#7a5c2e','#7a5c2e'],
-      [BLOCKS.STONE]: ['#888','#888','#888','#888','#888','#888'],
-      [BLOCKS.SAND]:  ['#d4c27a','#d4c27a','#d4c27a','#d4c27a','#d4c27a','#d4c27a'],
-      [BLOCKS.WOOD]:  ['#a0522d','#a0522d','#c8a060','#c8a060','#a0522d','#a0522d'],
-      [BLOCKS.LEAF]:  ['#2d7a1a','#2d7a1a','#2d7a1a','#2d7a1a','#2d7a1a','#2d7a1a'],
-      [BLOCKS.WATER]: ['#3a6fd8','#3a6fd8','#3a6fd8','#3a6fd8','#3a6fd8','#3a6fd8'],
-      [BLOCKS.SNOW]:  ['#eef','#eef','#eef','#eef','#eef','#eef'],
-      [BLOCKS.GLASS]: ['#aad4f5','#aad4f5','#aad4f5','#aad4f5','#aad4f5','#aad4f5'],
+      [BLOCKS.GRASS]:  ['#5a9e3a','#7a5c2e','#7a5c2e','#7a5c2e','#7a5c2e','#7a5c2e'],
+      [BLOCKS.DIRT]:   ['#7a5c2e','#7a5c2e','#7a5c2e','#7a5c2e','#7a5c2e','#7a5c2e'],
+      [BLOCKS.STONE]:  ['#888','#888','#888','#888','#888','#888'],
+      [BLOCKS.SAND]:   ['#d4c27a','#d4c27a','#d4c27a','#d4c27a','#d4c27a','#d4c27a'],
+      [BLOCKS.WOOD]:   ['#c8a060','#c8a060','#a0522d','#a0522d','#a0522d','#a0522d'],
+      [BLOCKS.LEAF]:   ['#2d7a1a','#2d7a1a','#2d7a1a','#2d7a1a','#2d7a1a','#2d7a1a'],
+      [BLOCKS.WATER]:  ['#3a6fd8','#3a6fd8','#3a6fd8','#3a6fd8','#3a6fd8','#3a6fd8'],
+      [BLOCKS.SNOW]:   ['#e8eef8','#e8eef8','#e8eef8','#e8eef8','#e8eef8','#e8eef8'],
+      [BLOCKS.GLASS]:  ['#aad4f5','#aad4f5','#aad4f5','#aad4f5','#aad4f5','#aad4f5'],
+      [BLOCKS.COBBLE]: ['#777','#777','#686868','#686868','#686868','#686868'],
+      [BLOCKS.BRICK]:  ['#8b3a2a','#8b3a2a','#9b4a3a','#9b4a3a','#9b4a3a','#9b4a3a'],
+      [BLOCKS.PLANKS]: ['#b8892a','#b8892a','#c8993a','#c8993a','#c8993a','#c8993a'],
+      [BLOCKS.GRAVEL]: ['#998877','#998877','#998877','#998877','#998877','#998877'],
+      [BLOCKS.COAL]:   ['#333','#333','#333','#333','#333','#333'],
     };
 
-    const BLOCK_NAMES = ['Luft','Gras','Erde','Stein','Sand','Holz','Blätter','Wasser','Schnee','Glas'];
-    const HOTBAR = [BLOCKS.GRASS, BLOCKS.DIRT, BLOCKS.STONE, BLOCKS.SAND, BLOCKS.WOOD, BLOCKS.LEAF, BLOCKS.GLASS];
+    const BLOCK_NAMES = {
+      [BLOCKS.AIR]:'Luft', [BLOCKS.GRASS]:'Gras', [BLOCKS.DIRT]:'Erde',
+      [BLOCKS.STONE]:'Stein', [BLOCKS.SAND]:'Sand', [BLOCKS.WOOD]:'Holzstamm',
+      [BLOCKS.LEAF]:'Blätter', [BLOCKS.WATER]:'Wasser', [BLOCKS.SNOW]:'Schnee',
+      [BLOCKS.GLASS]:'Glas', [BLOCKS.COBBLE]:'Kopfsteinpflaster',
+      [BLOCKS.BRICK]:'Ziegel', [BLOCKS.PLANKS]:'Holzdielen',
+      [BLOCKS.GRAVEL]:'Kies', [BLOCKS.COAL]:'Kohleblock',
+    };
+    const ALL_PLACEABLE = [
+      BLOCKS.GRASS, BLOCKS.DIRT, BLOCKS.STONE, BLOCKS.SAND,
+      BLOCKS.WOOD, BLOCKS.LEAF, BLOCKS.GLASS, BLOCKS.SNOW,
+      BLOCKS.COBBLE, BLOCKS.BRICK, BLOCKS.PLANKS, BLOCKS.GRAVEL, BLOCKS.COAL,
+    ];
 
-    // ── Simple noise (value noise) ────────────────────────────────
+    // hotbar: 9 slots
+    let hotbar = [BLOCKS.GRASS, BLOCKS.DIRT, BLOCKS.STONE, BLOCKS.SAND, BLOCKS.WOOD, BLOCKS.PLANKS, BLOCKS.BRICK, BLOCKS.GLASS, BLOCKS.COAL];
+
+    // ── Noise ─────────────────────────────────────────────────────
     function hash(x, z) {
       let h = (x * 374761393 + z * 668265263) | 0;
       h = (h ^ (h >> 13)) * 1274126177;
       return ((h ^ (h >> 16)) & 0x7fffffff) / 0x7fffffff;
     }
-    function smoothNoise(x, z, scale) {
-      const xi = Math.floor(x / scale), zi = Math.floor(z / scale);
-      const xf = (x / scale) - xi, zf = (z / scale) - zi;
-      const u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
-      return (
-        hash(xi,   zi  ) * (1-u) * (1-v) +
-        hash(xi+1, zi  ) *    u  * (1-v) +
-        hash(xi,   zi+1) * (1-u) *    v  +
-        hash(xi+1, zi+1) *    u  *    v
-      );
+    function smoothNoise(x, z, s) {
+      const xi = Math.floor(x/s), zi = Math.floor(z/s);
+      const xf = x/s - xi, zf = z/s - zi;
+      const u = xf*xf*(3-2*xf), v = zf*zf*(3-2*zf);
+      return hash(xi,zi)*(1-u)*(1-v) + hash(xi+1,zi)*u*(1-v) + hash(xi,zi+1)*(1-u)*v + hash(xi+1,zi+1)*u*v;
     }
     function terrainHeight(wx, wz) {
-      return Math.floor(
-        smoothNoise(wx, wz, 20) * 10 +
-        smoothNoise(wx, wz, 8)  * 4  +
-        SEA_LEVEL
-      );
+      return Math.floor(smoothNoise(wx,wz,20)*10 + smoothNoise(wx,wz,8)*4 + SEA_LEVEL);
     }
 
-    // ── World storage ─────────────────────────────────────────────
+    // ── World ─────────────────────────────────────────────────────
     const worldData = new Map();
-    function key(x, y, z) { return `${x},${y},${z}`; }
-    function getBlock(x, y, z) {
-      if (y < 0 || y >= WORLD_HEIGHT) return y < 0 ? BLOCKS.STONE : BLOCKS.AIR;
-      return worldData.get(key(x, y, z)) ?? BLOCKS.AIR;
+    function key(x,y,z) { return `${x},${y},${z}`; }
+    function getBlock(x,y,z) {
+      if (y < 0) return BLOCKS.STONE;
+      if (y >= WORLD_HEIGHT) return BLOCKS.AIR;
+      return worldData.get(key(x,y,z)) ?? BLOCKS.AIR;
     }
-    function setBlock(x, y, z, type) {
+    function setBlock(x,y,z,t) {
       if (y < 0 || y >= WORLD_HEIGHT) return;
-      if (type === BLOCKS.AIR) worldData.delete(key(x, y, z));
-      else worldData.set(key(x, y, z), type);
+      if (t === BLOCKS.AIR) worldData.delete(key(x,y,z));
+      else worldData.set(key(x,y,z), t);
     }
 
-    // ── Terrain generation ────────────────────────────────────────
     const generatedChunks = new Set();
-    function generateChunk(cx, cz) {
+    function generateChunk(cx,cz) {
       const ck = `${cx},${cz}`;
       if (generatedChunks.has(ck)) return;
       generatedChunks.add(ck);
-
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-          const wx = cx * CHUNK_SIZE + lx;
-          const wz = cz * CHUNK_SIZE + lz;
-          const h  = terrainHeight(wx, wz);
-
+          const wx = cx*CHUNK_SIZE+lx, wz = cz*CHUNK_SIZE+lz;
+          const h = terrainHeight(wx,wz);
           for (let y = 0; y <= h; y++) {
-            let type;
-            if (y === h)       type = h > SEA_LEVEL + 6 ? BLOCKS.SNOW : h <= SEA_LEVEL ? BLOCKS.SAND : BLOCKS.GRASS;
-            else if (y >= h-3) type = BLOCKS.DIRT;
-            else               type = BLOCKS.STONE;
-            setBlock(wx, y, wz, type);
+            let t;
+            if (y === h)      t = h > SEA_LEVEL+6 ? BLOCKS.SNOW : h <= SEA_LEVEL ? BLOCKS.SAND : BLOCKS.GRASS;
+            else if (y >= h-3) t = BLOCKS.DIRT;
+            else               t = hash(wx+y,wz+y) < 0.05 ? BLOCKS.COAL : BLOCKS.STONE;
+            setBlock(wx,y,wz,t);
           }
-
-          // Trees (not on sand/snow)
-          if (h > SEA_LEVEL && h < SEA_LEVEL + 6 && hash(wx*3, wz*3) < 0.04) {
-            const trunk = 4 + Math.floor(hash(wx*7, wz*7) * 2);
-            for (let t = 1; t <= trunk; t++) setBlock(wx, h + t, wz, BLOCKS.WOOD);
-            for (let lx2 = -2; lx2 <= 2; lx2++)
-              for (let lz2 = -2; lz2 <= 2; lz2++)
-                for (let ly = trunk - 1; ly <= trunk + 1; ly++)
-                  if (Math.abs(lx2) + Math.abs(lz2) + Math.abs(ly - trunk) <= 3)
-                    if (getBlock(wx+lx2, h+ly, wz+lz2) === BLOCKS.AIR)
-                      setBlock(wx+lx2, h+ly, wz+lz2, BLOCKS.LEAF);
+          // gravel patches near sea
+          if (h === SEA_LEVEL && hash(wx*5,wz*5) < 0.3) setBlock(wx,h,wz,BLOCKS.GRAVEL);
+          // trees
+          if (h > SEA_LEVEL && h < SEA_LEVEL+6 && hash(wx*3,wz*3) < 0.04) {
+            const trunk = 4 + Math.floor(hash(wx*7,wz*7)*2);
+            for (let t2=1; t2<=trunk; t2++) setBlock(wx,h+t2,wz,BLOCKS.WOOD);
+            for (let lx2=-2; lx2<=2; lx2++)
+              for (let lz2=-2; lz2<=2; lz2++)
+                for (let ly=trunk-1; ly<=trunk+1; ly++)
+                  if (Math.abs(lx2)+Math.abs(lz2)+Math.abs(ly-trunk) <= 3)
+                    if (getBlock(wx+lx2,h+ly,wz+lz2) === BLOCKS.AIR)
+                      setBlock(wx+lx2,h+ly,wz+lz2,BLOCKS.LEAF);
           }
         }
       }
     }
 
-    // ── Three.js setup ────────────────────────────────────────────
-    const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
-    renderer.setPixelRatio(devicePixelRatio);
-    renderer.shadowMap.enabled = true;
-    renderer.setSize(innerWidth, innerHeight);
+    // ── Three.js ──────────────────────────────────────────────────
+    const canvas = document.getElementById('canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+    renderer.setPixelRatio(1);
+    // render at reduced resolution for pixel look
+    const rW = () => Math.floor(innerWidth  / PIXEL_SCALE);
+    const rH = () => Math.floor(innerHeight / PIXEL_SCALE);
+    renderer.setSize(rW(), rH(), false); // false = don't change CSS size
+    canvas.style.width  = '100vw';
+    canvas.style.height = '100vh';
 
-    const scene  = new THREE.Scene();
+    const scene = new THREE.Scene();
     scene.background = new THREE.Color('#87ceeb');
     scene.fog = new THREE.Fog('#87ceeb', 40, RENDER_DIST * CHUNK_SIZE * 1.8);
 
-    const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 200);
+    const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 200);
 
-    // Lighting
-    const sun = new THREE.DirectionalLight(0xfff5d0, 1.2);
-    sun.position.set(50, 80, 50);
-    sun.castShadow = true;
-    scene.add(sun);
-    scene.add(new THREE.AmbientLight(0xaabbff, 0.5));
+    scene.add(Object.assign(new THREE.DirectionalLight(0xfff5d0, 1.3), {position: new THREE.Vector3(50,80,50)}));
+    scene.add(new THREE.AmbientLight(0xaabbff, 0.45));
 
-    // ── Geometry cache ─────────────────────────────────────────────
+    // ── Mesh building ─────────────────────────────────────────────
     const faceNormals = [
-      new THREE.Vector3( 0,  1,  0), // top
-      new THREE.Vector3( 0, -1,  0), // bottom
-      new THREE.Vector3( 1,  0,  0), // +x
-      new THREE.Vector3(-1,  0,  0), // -x
-      new THREE.Vector3( 0,  0,  1), // +z
-      new THREE.Vector3( 0,  0, -1), // -z
+      new THREE.Vector3(0,1,0), new THREE.Vector3(0,-1,0),
+      new THREE.Vector3(1,0,0), new THREE.Vector3(-1,0,0),
+      new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,-1),
     ];
-    const faceOffsets = [[0,1,0],[0,-1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]];
+    const faceOffsets  = [[0,1,0],[0,-1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]];
     const faceVertices = [
-      [[0,1,0],[1,1,0],[1,1,1],[0,1,1]], // top
-      [[0,0,1],[1,0,1],[1,0,0],[0,0,0]], // bottom
-      [[1,0,0],[1,1,0],[1,1,1],[1,0,1]], // +x
-      [[0,0,1],[0,1,1],[0,1,0],[0,0,0]], // -x
-      [[0,0,1],[1,0,1],[1,1,1],[0,1,1]], // +z  ← fixed winding
-      [[1,0,0],[0,0,0],[0,1,0],[1,1,0]], // -z  ← fixed winding
+      [[0,1,0],[1,1,0],[1,1,1],[0,1,1]],
+      [[0,0,1],[1,0,1],[1,0,0],[0,0,0]],
+      [[1,0,0],[1,1,0],[1,1,1],[1,0,1]],
+      [[0,0,1],[0,1,1],[0,1,0],[0,0,0]],
+      [[0,0,1],[1,0,1],[1,1,1],[0,1,1]],
+      [[1,0,0],[0,0,0],[0,1,0],[1,1,0]],
     ];
 
-    const materialCache = new Map();
-    function getMaterial(color, transparent) {
-      if (materialCache.has(color)) return materialCache.get(color);
-      const mat = new THREE.MeshLambertMaterial({
-        color, transparent, opacity: transparent ? 0.7 : 1
-      });
-      materialCache.set(color, mat);
-      return mat;
+    const matCache = new Map();
+    function getMat(color, transp) {
+      const k = color+(transp?'t':'');
+      if (!matCache.has(k)) matCache.set(k, new THREE.MeshLambertMaterial({color, transparent:transp, opacity:transp?0.65:1}));
+      return matCache.get(k);
     }
 
-    // ── Chunk meshes ───────────────────────────────────────────────
     const chunkMeshes = new Map();
-
-    function buildChunkMesh(cx, cz) {
+    function buildChunkMesh(cx,cz) {
       const ck = `${cx},${cz}`;
       const old = chunkMeshes.get(ck);
-      if (old) { old.forEach(m => { scene.remove(m); m.geometry.dispose(); }); }
+      if (old) old.forEach(m => { scene.remove(m); m.geometry.dispose(); });
 
-      // Group faces by material
-      const faceGroups = new Map(); // color -> {positions,normals,indices,uvs}
-
-      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-          for (let y = 0; y < WORLD_HEIGHT; y++) {
-            const wx = cx * CHUNK_SIZE + lx;
-            const wz = cz * CHUNK_SIZE + lz;
-            const bt = getBlock(wx, y, wz);
-            if (bt === BLOCKS.AIR) continue;
+      const groups = new Map();
+      for (let lx=0; lx<CHUNK_SIZE; lx++)
+        for (let lz=0; lz<CHUNK_SIZE; lz++)
+          for (let y=0; y<WORLD_HEIGHT; y++) {
+            const wx=cx*CHUNK_SIZE+lx, wz=cz*CHUNK_SIZE+lz;
+            const bt = getBlock(wx,y,wz);
+            if (!bt) continue;
             const colors = BLOCK_COLORS[bt];
-
-            faceOffsets.forEach(([dx,dy,dz], fi) => {
-              const nb = getBlock(wx+dx, y+dy, wz+dz);
+            faceOffsets.forEach(([dx,dy,dz],fi) => {
+              const nb = getBlock(wx+dx,y+dy,wz+dz);
               if (nb !== BLOCKS.AIR && nb !== BLOCKS.GLASS && bt !== BLOCKS.GLASS) return;
               if (nb !== BLOCKS.AIR && bt !== BLOCKS.GLASS) return;
-
               const c = colors[fi];
-              if (!faceGroups.has(c)) faceGroups.set(c, {pos:[],nor:[],idx:[],cnt:0});
-              const g = faceGroups.get(c);
-
-              const verts = faceVertices[fi];
-              const base  = g.cnt;
-              verts.forEach(([vx,vy,vz]) => {
+              if (!groups.has(c)) groups.set(c,{pos:[],nor:[],idx:[],cnt:0});
+              const g = groups.get(c);
+              const base = g.cnt;
+              faceVertices[fi].forEach(([vx,vy,vz]) => {
                 g.pos.push(wx+vx, y+vy, wz+vz);
                 const n = faceNormals[fi];
                 g.nor.push(n.x, n.y, n.z);
@@ -293,97 +392,213 @@
               g.cnt += 4;
             });
           }
-        }
-      }
 
       const meshes = [];
-      faceGroups.forEach((g, color) => {
+      groups.forEach((g,color) => {
         const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));
-        geo.setAttribute('normal',   new THREE.Float32BufferAttribute(g.nor, 3));
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos,3));
+        geo.setAttribute('normal',   new THREE.Float32BufferAttribute(g.nor,3));
         geo.setIndex(g.idx);
-        const isTransparent = color === BLOCK_COLORS[BLOCKS.WATER][0] || color === BLOCK_COLORS[BLOCKS.GLASS][0];
-        const mesh = new THREE.Mesh(geo, getMaterial(color, isTransparent));
-        mesh.castShadow = mesh.receiveShadow = true;
+        const isT = color===BLOCK_COLORS[BLOCKS.WATER][0]||color===BLOCK_COLORS[BLOCKS.GLASS][0];
+        const mesh = new THREE.Mesh(geo, getMat(color,isT));
         scene.add(mesh);
         meshes.push(mesh);
       });
       chunkMeshes.set(ck, meshes);
     }
 
-    function updateChunksAround(px, pz) {
-      const cx0 = Math.floor(px / CHUNK_SIZE);
-      const cz0 = Math.floor(pz / CHUNK_SIZE);
-      for (let dx = -RENDER_DIST; dx <= RENDER_DIST; dx++) {
-        for (let dz = -RENDER_DIST; dz <= RENDER_DIST; dz++) {
-          const cx = cx0 + dx, cz = cz0 + dz;
-          generateChunk(cx, cz);
-          if (!chunkMeshes.has(`${cx},${cz}`)) buildChunkMesh(cx, cz);
+    function updateChunksAround(px,pz) {
+      const cx0=Math.floor(px/CHUNK_SIZE), cz0=Math.floor(pz/CHUNK_SIZE);
+      for (let dx=-RENDER_DIST;dx<=RENDER_DIST;dx++)
+        for (let dz=-RENDER_DIST;dz<=RENDER_DIST;dz++) {
+          const cx=cx0+dx, cz=cz0+dz;
+          generateChunk(cx,cz);
+          if (!chunkMeshes.has(`${cx},${cz}`)) buildChunkMesh(cx,cz);
         }
-      }
+    }
+    function rebuildChunksAround(wx,wz) {
+      const cx=Math.floor(wx/CHUNK_SIZE), cz=Math.floor(wz/CHUNK_SIZE);
+      for (let dx=-1;dx<=1;dx++) for (let dz=-1;dz<=1;dz++) buildChunkMesh(cx+dx,cz+dz);
     }
 
-    function rebuildChunksAround(wx, wz) {
-      const cx = Math.floor(wx / CHUNK_SIZE);
-      const cz = Math.floor(wz / CHUNK_SIZE);
-      for (let dx = -1; dx <= 1; dx++)
-        for (let dz = -1; dz <= 1; dz++)
-          buildChunkMesh(cx+dx, cz+dz);
-    }
-
-    // ── Player ─────────────────────────────────────────────────────
-    const player = {
-      pos: new THREE.Vector3(8, 20, 8),
-      vel: new THREE.Vector3(),
-      yaw: 0, pitch: 0,
-      onGround: false,
-      eyeHeight: 1.6,
-    };
-
+    // ── Player ────────────────────────────────────────────────────
+    const player = { pos: new THREE.Vector3(8,20,8), vel: new THREE.Vector3(), yaw:0, pitch:0, onGround:false, eyeHeight:1.6 };
     const keys = {};
     let selectedSlot = 0;
     let paused = false;
     let started = false;
+    let inventoryOpen = false;
 
-    // ── Input ──────────────────────────────────────────────────────
+    // ── Inventory logic ───────────────────────────────────────────
+    let invDragBlock = null; // block type being dragged from inv grid
+    let invSelectedHotbarSlot = 0; // which hotbar slot to fill
+
+    function makeBlockIcon(bt, size=38) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      if (!bt || bt === BLOCKS.AIR) { return c; }
+      const colors = BLOCK_COLORS[bt];
+      if (!colors) return c;
+      // draw a simple isometric-ish cube face
+      const s = size;
+      // top face (lighter)
+      ctx.fillStyle = lighten(colors[0], 30);
+      ctx.fillRect(s*0.25, 0, s*0.5, s*0.3);
+      // left face
+      ctx.fillStyle = darken(colors[2], 20);
+      ctx.fillRect(0, s*0.3, s*0.5, s*0.7);
+      // right face
+      ctx.fillStyle = colors[2];
+      ctx.fillRect(s*0.5, s*0.3, s*0.5, s*0.7);
+      // pixel grid overlay
+      ctx.fillStyle = 'rgba(0,0,0,0.08)';
+      for (let px=0; px<s; px+=4) { ctx.fillRect(px,0,1,s); ctx.fillRect(0,px,s,1); }
+      return c;
+    }
+
+    function lighten(hex, amt) {
+      const c = parseInt(hex.replace('#','').padEnd(6,'0'),16);
+      const r = Math.min(255,((c>>16)&0xff)+amt);
+      const g = Math.min(255,((c>>8)&0xff)+amt);
+      const b = Math.min(255,(c&0xff)+amt);
+      return `rgb(${r},${g},${b})`;
+    }
+    function darken(hex, amt) { return lighten(hex, -amt); }
+
+    function buildInventoryUI() {
+      const grid = document.getElementById('inv-grid');
+      const hRow = document.getElementById('inv-hotbar');
+      grid.innerHTML = '';
+      hRow.innerHTML  = '';
+
+      // All placeable blocks
+      ALL_PLACEABLE.forEach(bt => {
+        const slot = document.createElement('div');
+        slot.className = 'inv-slot';
+        const icon = makeBlockIcon(bt, 32);
+        icon.className = 'slot-icon';
+        slot.appendChild(icon);
+        slot.title = BLOCK_NAMES[bt];
+        slot.addEventListener('click', () => {
+          hotbar[invSelectedHotbarSlot] = bt;
+          selectedSlot = invSelectedHotbarSlot;
+          buildInventoryUI();
+          updateHUD();
+        });
+        slot.addEventListener('mouseenter', e => showTooltip(e, BLOCK_NAMES[bt]));
+        slot.addEventListener('mouseleave', hideTooltip);
+        grid.appendChild(slot);
+      });
+
+      // Hotbar row inside inventory
+      hotbar.forEach((bt, i) => {
+        const slot = document.createElement('div');
+        slot.className = 'inv-slot' + (i === invSelectedHotbarSlot ? ' inv-active' : '');
+        if (bt) {
+          const icon = makeBlockIcon(bt, 32);
+          icon.className = 'slot-icon';
+          slot.appendChild(icon);
+          const cnt = document.createElement('div');
+          cnt.className = 'item-count'; cnt.textContent = '∞';
+          slot.appendChild(cnt);
+        }
+        slot.title = bt ? BLOCK_NAMES[bt] : 'Leer';
+        slot.addEventListener('click', () => {
+          invSelectedHotbarSlot = i;
+          buildInventoryUI();
+        });
+        slot.addEventListener('mouseenter', e => bt && showTooltip(e, BLOCK_NAMES[bt]));
+        slot.addEventListener('mouseleave', hideTooltip);
+        hRow.appendChild(slot);
+      });
+    }
+
+    function showTooltip(e, text) {
+      const t = document.getElementById('inv-tooltip');
+      t.textContent = text; t.style.display = 'block';
+      t.style.left = (e.clientX+12)+'px'; t.style.top = (e.clientY-4)+'px';
+    }
+    function hideTooltip() { document.getElementById('inv-tooltip').style.display='none'; }
+
+    function openInventory() {
+      inventoryOpen = true;
+      invSelectedHotbarSlot = selectedSlot;
+      buildInventoryUI();
+      document.getElementById('inventory').classList.add('open');
+      document.exitPointerLock();
+    }
+    function closeInventory() {
+      inventoryOpen = false;
+      document.getElementById('inventory').classList.remove('open');
+      document.body.requestPointerLock();
+    }
+
+    // ── HUD ───────────────────────────────────────────────────────
+    function updateHUD() {
+      const hud = document.getElementById('hud');
+      hud.innerHTML = '';
+      hotbar.forEach((bt, i) => {
+        const slot = document.createElement('div');
+        slot.className = 'slot' + (i===selectedSlot?' active':'');
+        const num = document.createElement('div');
+        num.className = 'slot-num'; num.textContent = i+1;
+        slot.appendChild(num);
+        if (bt) {
+          const icon = makeBlockIcon(bt, 38);
+          icon.className = 'slot-icon';
+          slot.appendChild(icon);
+        }
+        slot.addEventListener('click', () => { selectedSlot=i; updateHUD(); });
+        hud.appendChild(slot);
+      });
+    }
+
+    // ── Input ─────────────────────────────────────────────────────
     document.addEventListener('keydown', e => {
       if (!started) return;
+      if (inventoryOpen) {
+        if (e.code==='KeyE'||e.code==='Escape') closeInventory();
+        return;
+      }
       keys[e.code] = true;
-      if (e.code === 'Escape') togglePause();
+      if (e.code==='Escape') togglePause();
+      if (e.code==='KeyE' && !paused) openInventory();
       const n = parseInt(e.key);
-      if (n >= 1 && n <= HOTBAR.length) { selectedSlot = n - 1; updateHUD(); }
+      if (n>=1 && n<=9) { selectedSlot=n-1; updateHUD(); }
     });
-    document.addEventListener('keyup', e => { keys[e.code] = false; });
+    document.addEventListener('keyup', e => { keys[e.code]=false; });
 
     document.addEventListener('mousemove', e => {
-      if (!started || paused || document.pointerLockElement !== document.body) return;
-      player.yaw   -= e.movementX * 0.002;
-      player.pitch -= e.movementY * 0.002;
-      player.pitch  = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, player.pitch));
+      if (!started||paused||inventoryOpen||document.pointerLockElement!==document.body) return;
+      player.yaw   -= e.movementX*0.002;
+      player.pitch -= e.movementY*0.002;
+      player.pitch  = Math.max(-Math.PI/2+0.01, Math.min(Math.PI/2-0.01, player.pitch));
     });
 
     document.addEventListener('wheel', e => {
-      selectedSlot = (selectedSlot + (e.deltaY > 0 ? 1 : -1) + HOTBAR.length) % HOTBAR.length;
+      if (inventoryOpen||paused) return;
+      selectedSlot = (selectedSlot+(e.deltaY>0?1:-1)+9)%9;
       updateHUD();
     });
 
     document.body.addEventListener('click', () => {
-      if (started && !paused) document.body.requestPointerLock();
+      if (started&&!paused&&!inventoryOpen) document.body.requestPointerLock();
     });
 
-    // Block interaction
     document.addEventListener('mousedown', e => {
-      if (!started || paused || document.pointerLockElement !== document.body) return;
+      if (!started||paused||inventoryOpen||document.pointerLockElement!==document.body) return;
       const hit = raycast(8);
       if (!hit) return;
-      if (e.button === 0) {
-        setBlock(hit.bx, hit.by, hit.bz, BLOCKS.AIR);
-        rebuildChunksAround(hit.bx, hit.bz);
-      } else if (e.button === 2) {
-        const nx = hit.bx + hit.nx, ny = hit.by + hit.ny, nz = hit.bz + hit.nz;
-        if (!playerOccupies(nx, ny, nz)) {
-          setBlock(nx, ny, nz, HOTBAR[selectedSlot]);
-          rebuildChunksAround(nx, nz);
+      if (e.button===0) {
+        setBlock(hit.bx,hit.by,hit.bz,BLOCKS.AIR);
+        rebuildChunksAround(hit.bx,hit.bz);
+      } else if (e.button===2) {
+        const nx=hit.bx+hit.nx, ny=hit.by+hit.ny, nz=hit.bz+hit.nz;
+        const sel = hotbar[selectedSlot];
+        if (sel && !playerOccupies(nx,ny,nz)) {
+          setBlock(nx,ny,nz,sel);
+          rebuildChunksAround(nx,nz);
         }
       }
     });
@@ -391,199 +606,122 @@
 
     function togglePause() {
       paused = !paused;
-      document.getElementById('paused').style.display = paused ? 'flex' : 'none';
+      document.getElementById('paused').style.display = paused?'flex':'none';
       if (!paused) document.body.requestPointerLock();
       else document.exitPointerLock();
     }
 
-    // ── Raycast ────────────────────────────────────────────────────
+    // ── Raycast ───────────────────────────────────────────────────
     function raycast(maxDist) {
       const dir = new THREE.Vector3(
-        Math.sin(player.yaw) * Math.cos(player.pitch) * -1,
+        -Math.sin(player.yaw)*Math.cos(player.pitch),
         Math.sin(player.pitch),
-        Math.cos(player.yaw) * Math.cos(player.pitch) * -1
+        -Math.cos(player.yaw)*Math.cos(player.pitch)
       );
-      const eye = player.pos.clone().setY(player.pos.y + player.eyeHeight);
+      const eye = player.pos.clone().setY(player.pos.y+player.eyeHeight);
       const step = 0.05;
-      let lx, ly, lz;
-      for (let d = 0; d < maxDist; d += step) {
-        const x = Math.floor(eye.x + dir.x * d);
-        const y = Math.floor(eye.y + dir.y * d);
-        const z = Math.floor(eye.z + dir.z * d);
-        const bt = getBlock(x, y, z);
-        if (bt !== BLOCKS.AIR && bt !== BLOCKS.WATER) {
-          const nx = lx !== undefined ? lx - x : 0;
-          const ny = ly !== undefined ? ly - y : 0;
-          const nz = lz !== undefined ? lz - z : 0;
-          return { bx:x, by:y, bz:z, nx, ny, nz };
+      let lx,ly,lz;
+      for (let d=0; d<maxDist; d+=step) {
+        const x=Math.floor(eye.x+dir.x*d), y=Math.floor(eye.y+dir.y*d), z=Math.floor(eye.z+dir.z*d);
+        const bt=getBlock(x,y,z);
+        if (bt!==BLOCKS.AIR&&bt!==BLOCKS.WATER) {
+          return { bx:x,by:y,bz:z, nx:lx!==undefined?lx-x:0, ny:ly!==undefined?ly-y:0, nz:lz!==undefined?lz-z:0 };
         }
-        lx = x; ly = y; lz = z;
+        lx=x; ly=y; lz=z;
       }
       return null;
     }
 
-    // ── Collision ──────────────────────────────────────────────────
-    function playerOccupies(x, y, z) {
-      const px = Math.floor(player.pos.x), pz = Math.floor(player.pos.z);
-      const py = Math.floor(player.pos.y);
-      return x === px && z === pz && (y === py || y === py+1);
+    // ── Collision ─────────────────────────────────────────────────
+    function playerOccupies(x,y,z) {
+      return x===Math.floor(player.pos.x)&&z===Math.floor(player.pos.z)&&(y===Math.floor(player.pos.y)||y===Math.floor(player.pos.y)+1);
     }
-
-    function isSolid(x, y, z) {
-      const b = getBlock(x, y, z);
-      return b !== BLOCKS.AIR && b !== BLOCKS.WATER && b !== BLOCKS.LEAF && b !== BLOCKS.GLASS;
+    function isSolid(x,y,z) {
+      const b=getBlock(x,y,z);
+      return b!==BLOCKS.AIR&&b!==BLOCKS.WATER&&b!==BLOCKS.LEAF&&b!==BLOCKS.GLASS;
     }
-
     function resolveCollisions(dt) {
-      const W  = 0.3;
-      const px = player.pos.x, py = player.pos.y, pz = player.pos.z;
-
-      // Y
-      player.pos.y += player.vel.y * dt;
+      const W=0.3, px=player.pos.x, pz=player.pos.z;
+      player.pos.y += player.vel.y*dt;
       player.onGround = false;
       const fy = Math.floor(player.pos.y);
-      if (player.vel.y < 0) {
-        if (isSolid(Math.floor(px), fy, Math.floor(pz)) ||
-            isSolid(Math.floor(px-W), fy, Math.floor(pz)) ||
-            isSolid(Math.floor(px+W), fy, Math.floor(pz)) ||
-            isSolid(Math.floor(px), fy, Math.floor(pz-W)) ||
-            isSolid(Math.floor(px), fy, Math.floor(pz+W))) {
-          player.pos.y = fy + 1;
-          player.vel.y = 0;
-          player.onGround = true;
-        }
-      } else if (player.vel.y > 0) {
-        const hy = Math.floor(player.pos.y + 1.8);
-        if (isSolid(Math.floor(px), hy, Math.floor(pz))) {
-          player.pos.y = hy - 1.9;
-          player.vel.y = 0;
-        }
+      if (player.vel.y<0) {
+        for (const [ox,oz] of [[0,0],[W,0],[-W,0],[0,W],[0,-W]])
+          if (isSolid(Math.floor(px+ox),fy,Math.floor(pz+oz))) { player.pos.y=fy+1; player.vel.y=0; player.onGround=true; break; }
+      } else if (player.vel.y>0) {
+        const hy=Math.floor(player.pos.y+1.8);
+        if (isSolid(Math.floor(px),hy,Math.floor(pz))) { player.pos.y=hy-1.9; player.vel.y=0; }
       }
-
-      // X
-      player.pos.x += player.vel.x * dt;
-      if (isSolid(Math.floor(player.pos.x + W), Math.floor(player.pos.y + 0.1), Math.floor(player.pos.z)) ||
-          isSolid(Math.floor(player.pos.x + W), Math.floor(player.pos.y + 1.0), Math.floor(player.pos.z))) {
-        player.pos.x = Math.floor(player.pos.x + W) - W;
-        player.vel.x = 0;
+      player.pos.x += player.vel.x*dt;
+      for (const sign of [1,-1]) {
+        if (isSolid(Math.floor(player.pos.x+sign*W),Math.floor(player.pos.y+0.1),Math.floor(player.pos.z))||
+            isSolid(Math.floor(player.pos.x+sign*W),Math.floor(player.pos.y+1.0),Math.floor(player.pos.z)))
+          { player.pos.x = Math.floor(player.pos.x+sign*W)+(sign>0?-W:1+W); player.vel.x=0; }
       }
-      if (isSolid(Math.floor(player.pos.x - W), Math.floor(player.pos.y + 0.1), Math.floor(player.pos.z)) ||
-          isSolid(Math.floor(player.pos.x - W), Math.floor(player.pos.y + 1.0), Math.floor(player.pos.z))) {
-        player.pos.x = Math.floor(player.pos.x - W) + 1 + W;
-        player.vel.x = 0;
-      }
-
-      // Z
-      player.pos.z += player.vel.z * dt;
-      if (isSolid(Math.floor(player.pos.x), Math.floor(player.pos.y + 0.1), Math.floor(player.pos.z + W)) ||
-          isSolid(Math.floor(player.pos.x), Math.floor(player.pos.y + 1.0), Math.floor(player.pos.z + W))) {
-        player.pos.z = Math.floor(player.pos.z + W) - W;
-        player.vel.z = 0;
-      }
-      if (isSolid(Math.floor(player.pos.x), Math.floor(player.pos.y + 0.1), Math.floor(player.pos.z - W)) ||
-          isSolid(Math.floor(player.pos.x), Math.floor(player.pos.y + 1.0), Math.floor(player.pos.z - W))) {
-        player.pos.z = Math.floor(player.pos.z - W) + 1 + W;
-        player.vel.z = 0;
+      player.pos.z += player.vel.z*dt;
+      for (const sign of [1,-1]) {
+        if (isSolid(Math.floor(player.pos.x),Math.floor(player.pos.y+0.1),Math.floor(player.pos.z+sign*W))||
+            isSolid(Math.floor(player.pos.x),Math.floor(player.pos.y+1.0),Math.floor(player.pos.z+sign*W)))
+          { player.pos.z = Math.floor(player.pos.z+sign*W)+(sign>0?-W:1+W); player.vel.z=0; }
       }
     }
 
-    // ── HUD ────────────────────────────────────────────────────────
-    function updateHUD() {
-      const hud = document.getElementById('hud');
-      hud.innerHTML = '';
-      HOTBAR.forEach((bt, i) => {
-        const slot = document.createElement('div');
-        slot.className = 'slot' + (i === selectedSlot ? ' active' : '');
-        const icon = document.createElement('div');
-        icon.className = 'slot-icon';
-        icon.style.background = BLOCK_COLORS[bt][0];
-        icon.title = BLOCK_NAMES[bt];
-        slot.appendChild(icon);
-        slot.addEventListener('click', () => { selectedSlot = i; updateHUD(); });
-        hud.appendChild(slot);
-      });
-    }
-    updateHUD();
-
-    // ── Game loop ──────────────────────────────────────────────────
-    let lastTime = performance.now();
-    let lastChunkUpdate = '';
-
+    // ── Game loop ─────────────────────────────────────────────────
+    let lastTime = performance.now(), lastChunk = '';
     function loop() {
       requestAnimationFrame(loop);
-      if (!started || paused) return;
+      if (!started||paused||inventoryOpen) return;
+      const now=performance.now(), dt=Math.min((now-lastTime)/1000,0.05);
+      lastTime=now;
 
-      const now = performance.now();
-      const dt  = Math.min((now - lastTime) / 1000, 0.05);
-      lastTime  = now;
-
-      // Movement
-      const forward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-      const right   = new THREE.Vector3( Math.cos(player.yaw), 0, -Math.sin(player.yaw));
-      const move    = new THREE.Vector3();
-
-      if (keys['KeyW']) move.addScaledVector(forward,  1);
-      if (keys['KeyS']) move.addScaledVector(forward, -1);
-      if (keys['KeyD']) move.addScaledVector(right,    1);
-      if (keys['KeyA']) move.addScaledVector(right,   -1);
-
-      if (move.lengthSq() > 0) move.normalize().multiplyScalar(MOVE_SPEED);
-      player.vel.x = move.x;
-      player.vel.z = move.z;
-
-      if ((keys['Space']) && player.onGround) player.vel.y = JUMP_FORCE;
-      if (keys['ShiftLeft']) player.vel.y = -5;
-
-      player.vel.y += GRAVITY * dt;
+      const fwd = new THREE.Vector3(-Math.sin(player.yaw),0,-Math.cos(player.yaw));
+      const rgt = new THREE.Vector3( Math.cos(player.yaw),0,-Math.sin(player.yaw));
+      const mv  = new THREE.Vector3();
+      if (keys['KeyW']) mv.addScaledVector(fwd, 1);
+      if (keys['KeyS']) mv.addScaledVector(fwd,-1);
+      if (keys['KeyD']) mv.addScaledVector(rgt, 1);
+      if (keys['KeyA']) mv.addScaledVector(rgt,-1);
+      if (mv.lengthSq()>0) mv.normalize().multiplyScalar(MOVE_SPEED);
+      player.vel.x=mv.x; player.vel.z=mv.z;
+      if (keys['Space']&&player.onGround) player.vel.y=JUMP_FORCE;
+      if (keys['ShiftLeft']) player.vel.y=-5;
+      player.vel.y += GRAVITY*dt;
       resolveCollisions(dt);
 
-      // Camera
-      camera.position.set(player.pos.x, player.pos.y + player.eyeHeight, player.pos.z);
-      camera.rotation.order = 'YXZ';
-      camera.rotation.y = player.yaw;
-      camera.rotation.x = player.pitch;
+      camera.position.set(player.pos.x, player.pos.y+player.eyeHeight, player.pos.z);
+      camera.rotation.order='YXZ'; camera.rotation.y=player.yaw; camera.rotation.x=player.pitch;
 
-      // Lazy chunk updates
-      const ck = `${Math.floor(player.pos.x/CHUNK_SIZE)},${Math.floor(player.pos.z/CHUNK_SIZE)}`;
-      if (ck !== lastChunkUpdate) {
-        lastChunkUpdate = ck;
-        updateChunksAround(player.pos.x, player.pos.z);
-      }
+      const ck=`${Math.floor(player.pos.x/CHUNK_SIZE)},${Math.floor(player.pos.z/CHUNK_SIZE)}`;
+      if (ck!==lastChunk) { lastChunk=ck; updateChunksAround(player.pos.x,player.pos.z); }
 
-      // Info
-      const hit = raycast(8);
-      const hitInfo = hit ? ` | Ziel: ${BLOCK_NAMES[getBlock(hit.bx, hit.by, hit.bz)]}` : '';
+      const hit=raycast(8);
+      const sel=hotbar[selectedSlot];
+      const hitInfo=hit?` | Ziel: ${BLOCK_NAMES[getBlock(hit.bx,hit.by,hit.bz)]}`:' | Kein Ziel';
       document.getElementById('info').innerHTML =
         `XYZ: ${player.pos.x.toFixed(1)} / ${player.pos.y.toFixed(1)} / ${player.pos.z.toFixed(1)}<br>` +
-        `Block: ${BLOCK_NAMES[HOTBAR[selectedSlot]]}${hitInfo}`;
+        `Block: ${sel?BLOCK_NAMES[sel]:'–'}${hitInfo}<br>` +
+        `[E] Inventar`;
 
-      renderer.render(scene, camera);
+      renderer.render(scene,camera);
     }
 
-    // ── Start ──────────────────────────────────────────────────────
+    // ── Start ─────────────────────────────────────────────────────
+    updateHUD();
     document.getElementById('start-btn').addEventListener('click', () => {
-      document.getElementById('start-screen').style.display = 'none';
-      started = true;
-
-      // Spawn player above terrain
-      const sh = terrainHeight(8, 8);
-      player.pos.set(8, sh + 3, 8);
-
-      // Pre-generate spawn chunks
-      for (let dx = -RENDER_DIST; dx <= RENDER_DIST; dx++)
-        for (let dz = -RENDER_DIST; dz <= RENDER_DIST; dz++) {
-          generateChunk(dx, dz);
-          buildChunkMesh(dx, dz);
-        }
-      lastChunkUpdate = '0,0';
-
+      document.getElementById('start-screen').style.display='none';
+      started=true;
+      const sh=terrainHeight(8,8);
+      player.pos.set(8,sh+3,8);
+      for (let dx=-RENDER_DIST;dx<=RENDER_DIST;dx++)
+        for (let dz=-RENDER_DIST;dz<=RENDER_DIST;dz++) { generateChunk(dx,dz); buildChunkMesh(dx,dz); }
+      lastChunk='0,0';
       document.body.requestPointerLock();
       requestAnimationFrame(loop);
     });
 
     window.addEventListener('resize', () => {
-      renderer.setSize(innerWidth, innerHeight);
-      camera.aspect = innerWidth / innerHeight;
+      renderer.setSize(rW(), rH(), false);
+      camera.aspect=innerWidth/innerHeight;
       camera.updateProjectionMatrix();
     });
   </script>
