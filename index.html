@@ -76,34 +76,13 @@
       overflow: hidden;
     }
 
-    /* animated sky gradient background */
-    #start-bg {
-      position: absolute; inset: 0;
-      background: linear-gradient(180deg, #1a3a6b 0%, #2a6ab0 40%, #87ceeb 70%, #5a9e3a 70%, #4a8e2a 100%);
-      animation: skyMove 20s linear infinite;
-    }
-    @keyframes skyMove {
-      0%   { filter: brightness(1)   hue-rotate(0deg);   }
-      50%  { filter: brightness(0.7) hue-rotate(-15deg); }
-      100% { filter: brightness(1)   hue-rotate(0deg);   }
-    }
+    /* bg-canvas IS the background — no CSS gradient on top */
+    #start-bg { display: none; }
 
-    /* pixel-block rain */
-    .bg-block {
-      position: absolute;
-      image-rendering: pixelated;
-      opacity: 0.35;
-      animation: fallBlock linear infinite;
-    }
-    @keyframes fallBlock {
-      from { transform: translateY(-60px) rotate(0deg); }
-      to   { transform: translateY(110vh)  rotate(360deg); }
-    }
-
-    /* dark overlay so title is readable */
+    /* soft dark vignette so text stays readable */
     #start-overlay {
       position: absolute; inset: 0;
-      background: rgba(0,0,0,0.45);
+      background: radial-gradient(ellipse at 50% 38%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.55) 100%);
     }
 
     #start-content {
@@ -298,7 +277,7 @@
     <div id="start-bg"></div>
     <div id="start-overlay"></div>
     <!-- floating pixel blocks (filled by JS) -->
-    <canvas id="bg-canvas" style="position:absolute;inset:0;width:100%;height:100%;opacity:0.18;pointer-events:none;image-rendering:pixelated;"></canvas>
+    <canvas id="bg-canvas" style="position:absolute;inset:0;width:100%;height:100%;opacity:1;pointer-events:none;image-rendering:pixelated;"></canvas>
 
     <div id="start-content">
       <div id="mc-title">MINECRAFT</div>
@@ -1095,142 +1074,177 @@
       renderer.render(scene,camera);
     }
 
-    // ── Animated pixelated start-screen background ───────────────
+    // ── Pixelated start-screen background ────────────────────────
     (function() {
       const bc = document.getElementById('bg-canvas');
       if (!bc) return;
-      // render at 1/4 res then CSS scales up with pixelated rendering
-      const SCALE = 4;
+
+      // Canvas at 1/3 of screen → CSS upscale 3× with pixelated rendering
+      // Larger scale = bigger, more visible blocks
+      const SCALE = 3;
       bc.width  = Math.ceil(innerWidth  / SCALE);
       bc.height = Math.ceil(innerHeight / SCALE);
       const W = bc.width, H = bc.height;
       const ctx = bc.getContext('2d');
       ctx.imageSmoothingEnabled = false;
 
-      const BS = 8; // block size in bg-canvas pixels
+      const BS = 16; // one block = 16px in the low-res canvas → 48px on screen
 
-      // Helper: draw a pixelated block face using TEX
       function drawBlock(bx, by, bt, fi) {
-        const texArr = TEX[bt];
-        if (!texArr) return;
-        const texC = texArr[fi]?.image;
+        const texC = TEX[bt]?.[fi]?.image;
         if (!texC) return;
-        ctx.save();
         ctx.imageSmoothingEnabled = false;
-        // draw 16×16 tex at BS×BS
-        ctx.drawImage(texC, bx, by, BS, BS);
-        ctx.restore();
+        ctx.drawImage(texC, (bx)|0, (by)|0, BS, BS);
       }
 
-      // Build static scene: scrolling panorama
-      // terrain profile (block heights per column)
-      const cols = Math.ceil(W / BS) + 2;
-      const groundY = Math.floor(H * 0.62 / BS); // ground row in block coords
-      const profile = Array.from({length: cols+10}, (_,i) => {
-        return groundY + Math.round(Math.sin(i*0.4)*1.5 + Math.sin(i*0.17)*2);
+      // ── World map: 2 screens wide so seamless looping ──
+      const WORLD_W = Math.ceil(W / BS) * 2 + 4;  // total columns in world
+      const ROWS    = Math.ceil(H / BS) + 2;
+
+      // terrain height per column (in block rows from top)
+      const SKY_ROWS = Math.floor(H * 0.45 / BS); // sky occupies top 45%
+      const profile  = Array.from({length: WORLD_W}, (_, i) => {
+        return SKY_ROWS + Math.round(
+          Math.sin(i * 0.55) * 2 +
+          Math.sin(i * 0.22) * 3 +
+          Math.sin(i * 0.09) * 1.5
+        );
       });
 
-      // tree positions
-      const trees = [];
-      for (let c=2; c<cols+8; c+=5+Math.floor(pxNoise(c,0)*4)) {
-        if (profile[c] < groundY+2) trees.push(c);
+      // tree at every ~7th column where terrain is relatively flat
+      const treeSet = new Set();
+      for (let c = 3; c < WORLD_W - 3; c++) {
+        if (Math.abs(profile[c] - profile[c+1]) <= 1 &&
+            Math.abs(profile[c] - profile[c-1]) <= 1 &&
+            ((c * 7 + 3) % 13) < 2) {
+          treeSet.add(c);
+        }
       }
 
-      let scroll = 0; // sub-pixel scroll
+      // cloud shapes  [worldFraction, yRow, width, height]
+      const clouds = [
+        [0.05, 1, 7, 2], [0.22, 2, 5, 2], [0.40, 1, 9, 3],
+        [0.57, 2, 6, 2], [0.72, 1, 8, 2], [0.88, 2, 5, 2],
+      ];
+
+      let scroll = 0;
       let bgRaf;
 
       function drawScene() {
-        ctx.clearRect(0,0,W,H);
+        ctx.clearRect(0, 0, W, H);
 
-        // ── sky gradient ──
-        const sky = ctx.createLinearGradient(0,0,0,H);
-        sky.addColorStop(0,'#1a3060');
-        sky.addColorStop(0.45,'#3a80c8');
-        sky.addColorStop(1,'#87ceeb');
-        ctx.fillStyle=sky; ctx.fillRect(0,0,W,H);
+        // ── Sky gradient ──
+        const sky = ctx.createLinearGradient(0, 0, 0, H);
+        sky.addColorStop(0,    '#0d1f4a');
+        sky.addColorStop(0.35, '#1a5faa');
+        sky.addColorStop(0.7,  '#5aaee8');
+        sky.addColorStop(1,    '#87ceeb');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, W, H);
 
-        // ── pixel clouds ──
-        const cloudData = [[0.1,0.12,5,2],[0.35,0.08,7,2],[0.6,0.15,4,2],[0.82,0.1,6,2]];
-        cloudData.forEach(([cx,cy,cw,ch]) => {
-          const cloudX = (((cx*W - scroll*0.3)|0) % (W+cw*BS) + W+cw*BS) % (W+cw*BS) - cw*BS;
-          ctx.fillStyle='rgba(255,255,255,0.85)';
-          for(let i=0;i<cw;i++) for(let j=0;j<ch;j++) {
-            if(i===0||i===cw-1) { if(j!==0) continue; }
-            ctx.fillRect((cloudX+i*BS)|0, (cy*H+j*BS)|0, BS, BS);
+        // ── Sun (top right, slow parallax) ──
+        const sunX = (W * 0.84 - scroll * 0.05 + W * 2) % (W * 1.5);
+        ctx.fillStyle = '#ffdd55';
+        for (let sy = 0; sy < 3; sy++)
+          for (let sx = 0; sx < 3; sx++)
+            ctx.fillRect((sunX + sx*BS)|0, (BS + sy*BS)|0, BS, BS);
+        ctx.fillStyle = '#ffee88';
+        ctx.fillRect((sunX+BS)|0, BS|0, BS, BS); // center brighter
+
+        // ── Clouds (slow parallax 0.2×) ──
+        clouds.forEach(([wx, wy, cw, ch]) => {
+          const baseX = wx * WORLD_W * BS;
+          const cx = ((baseX - scroll * 0.2) % (WORLD_W * BS) + WORLD_W * BS) % (WORLD_W * BS) - BS;
+          for (let ci = 0; ci < cw; ci++) for (let cj = 0; cj < ch; cj++) {
+            // cloud shape: skip corners
+            if ((ci === 0 || ci === cw-1) && cj > 0) continue;
+            if (cj === ch-1 && (ci === 0 || ci === cw-1)) continue;
+            ctx.fillStyle = cj === 0 ? 'rgba(255,255,255,0.95)' : 'rgba(220,235,255,0.9)';
+            ctx.fillRect((cx + ci*BS)|0, (wy*BS + cj*BS)|0, BS, BS);
+            // pixel highlight top-left
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.fillRect((cx + ci*BS)|0, (wy*BS + cj*BS)|0, 4, 4);
           }
         });
 
-        // ── sun ──
-        ctx.fillStyle='#ffee88';
-        ctx.fillRect(W-BS*4, BS, BS*3, BS*3);
-        ctx.fillStyle='#ffcc00';
-        ctx.fillRect(W-BS*4+1, BS+1, BS*3-2, BS*3-2);
+        // ── Terrain ──
+        const colOffset = Math.floor(scroll / BS);
+        const subPx     = scroll % BS;
+        const startC    = -1;
+        const endC      = Math.ceil(W / BS) + 2;
 
-        const offset = (scroll|0) % BS;
-        const startCol = -(offset > 0 ? 1 : 0);
+        for (let ci = startC; ci < endC; ci++) {
+          const worldC = ((colOffset + ci) % WORLD_W + WORLD_W) % WORLD_W;
+          const gh     = profile[worldC];
+          const bx     = ci * BS - subPx;
 
-        // draw terrain columns
-        for (let ci = startCol; ci <= Math.ceil(W/BS)+1; ci++) {
-          const worldCol = ci + Math.floor(scroll/BS);
-          const idx = ((worldCol % (cols+10)) + cols+10) % (cols+10);
-          const gh  = profile[idx] ?? groundY;
-          const bx  = ci*BS - offset;
-
-          // sky above ground: draw stone/dirt background columns
-          for (let row = gh+1; row < Math.ceil(H/BS)+2; row++) {
-            const by = row*BS;
-            if (by > H) break;
-            const bt = row === gh+1 ? BLOCKS.GRASS : row < gh+5 ? BLOCKS.DIRT : BLOCKS.STONE;
-            const fi  = row === gh+1 ? 0 : 2; // top face for grass top, side for rest
-            drawBlock(bx, by, bt, fi);
+          // underground layers
+          for (let row = gh + 1; row < ROWS; row++) {
+            const by = row * BS;
+            const depth = row - gh;
+            const bt = depth === 1 ? BLOCKS.DIRT
+                     : depth <= 4  ? BLOCKS.DIRT
+                     : depth <= 8  ? BLOCKS.STONE
+                     : BLOCKS.COAL;
+            drawBlock(bx, by, bt, 2);
           }
-          // ground top block
-          drawBlock(bx, gh*BS, BLOCKS.GRASS, 0); // top face
 
-          // draw trees
-          const isTrees = trees.includes(worldCol) || trees.includes(worldCol+1);
-          if (isTrees) {
-            const trunkH = 4;
-            for (let t=1; t<=trunkH; t++) drawBlock(bx, (gh-t)*BS, BLOCKS.WOOD, 2);
-            for (let lx2=-1; lx2<=1; lx2++)
-              for (let ly2=trunkH-1; ly2<=trunkH+1; ly2++)
-                drawBlock(bx+lx2*BS, (gh-ly2)*BS, BLOCKS.LEAF, 0);
+          // grass surface
+          drawBlock(bx, gh * BS, BLOCKS.GRASS, 0);
+
+          // trees (trunk + leaves)
+          if (treeSet.has(worldC)) {
+            const TRUNK = 5;
+            for (let t = 1; t <= TRUNK; t++)
+              drawBlock(bx, (gh - t) * BS, BLOCKS.WOOD, 2);
+            // leaf canopy 3×3 at top, 5×3 at middle
+            for (let lx = -2; lx <= 2; lx++)
+              for (let ly = TRUNK - 1; ly <= TRUNK + 1; ly++)
+                if (Math.abs(lx) + Math.abs(ly - TRUNK) <= 3)
+                  drawBlock(bx + lx * BS, (gh - ly) * BS, BLOCKS.LEAF, 0);
           }
+
+          // occasional sand patch near sea-level
+          if (worldC % 17 === 5 && gh >= SKY_ROWS + 4)
+            drawBlock(bx, gh * BS, BLOCKS.SAND, 0);
         }
 
-        // ── floating block particles ──
-        floatingBlocks.forEach(p => {
-          ctx.save();
-          ctx.translate((p.x)|0, (p.y)|0);
-          ctx.rotate(p.rot);
-          const texArr = TEX[p.bt];
-          if (texArr?.[ p.fi]?.image) {
-            ctx.globalAlpha = 0.7;
-            ctx.imageSmoothingEnabled=false;
-            ctx.drawImage(texArr[p.fi].image, -BS/2, -BS/2, BS, BS);
+        // ── Foreground: floating/falling block particles ──
+        floaters.forEach(p => {
+          const texC = TEX[p.bt]?.[p.fi]?.image;
+          if (texC) {
+            ctx.save();
+            ctx.globalAlpha = 0.72;
+            ctx.translate((p.x + BS/2)|0, (p.y + BS/2)|0);
+            ctx.rotate(p.rot);
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(texC, -BS/2, -BS/2, BS, BS);
+            ctx.restore();
           }
-          ctx.restore();
-          p.y += p.vy;
-          p.x += p.vx;
+          p.x  += p.vx;
+          p.y  += p.vy;
           p.rot += p.rotV;
-          if (p.y > H+BS) { p.y=-BS; p.x=Math.random()*W; }
+          if (p.y > H + BS*2) { p.y = -BS; p.x = Math.random() * W; }
         });
 
-        scroll += 0.4;
+        scroll += 0.5; // scroll speed
       }
 
-      const floatBTs = [BLOCKS.GRASS,BLOCKS.DIRT,BLOCKS.STONE,BLOCKS.SAND,BLOCKS.WOOD,BLOCKS.LEAF,BLOCKS.COBBLE,BLOCKS.BRICK];
-      const floatingBlocks = Array.from({length:18}, (_,i) => ({
-        x: Math.random()*W, y: Math.random()*H,
+      const floatBTs = [BLOCKS.GRASS,BLOCKS.DIRT,BLOCKS.STONE,BLOCKS.SAND,
+                        BLOCKS.WOOD,BLOCKS.LEAF,BLOCKS.COBBLE,BLOCKS.BRICK,
+                        BLOCKS.PLANKS,BLOCKS.SNOW];
+      const floaters = Array.from({length: 14}, (_, i) => ({
         bt: floatBTs[i % floatBTs.length],
-        fi: [0,2,4][i%3],
-        vy: 0.15+Math.random()*0.3,
-        vx: (Math.random()-0.5)*0.2,
-        rot: Math.random()*Math.PI*2,
-        rotV: (Math.random()-0.5)*0.03,
+        fi: i % 2 === 0 ? 0 : 2,
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: 0.2 + Math.random() * 0.35,
+        rot: Math.random() * Math.PI * 2,
+        rotV: (Math.random() - 0.5) * 0.025,
       }));
 
-      function bgLoop(){ drawScene(); bgRaf=requestAnimationFrame(bgLoop); }
+      function bgLoop() { drawScene(); bgRaf = requestAnimationFrame(bgLoop); }
       bgLoop();
       window._stopBgAnim = () => cancelAnimationFrame(bgRaf);
     })();
