@@ -1206,6 +1206,13 @@
       renderer.render(scene,camera);
     }
 
+    // Debug hook for automated testing (harmless; only used when ?debug present)
+    window.__dbg = {
+      get player(){return player;}, get scene(){return scene;}, get camera(){return camera;},
+      get renderer(){return renderer;}, get started(){return started;},
+      getBlock, raycast, terrainHeight, BLOCKS, render(){ renderer.render(scene,camera); }
+    };
+
     // ── Pixelated start-screen background ────────────────────────
     (function() {
       const bc = document.getElementById('bg-canvas');
