@@ -420,7 +420,7 @@
           const h = terrainHeight(wx,wz);
           for (let y = 0; y <= h; y++) {
             let t;
-            if (y === h)      t = h > SEA_LEVEL+6 ? BLOCKS.SNOW : h <= SEA_LEVEL ? BLOCKS.SAND : BLOCKS.GRASS;
+            if (y === h)      t = h > SEA_LEVEL+14 ? BLOCKS.SNOW : h <= SEA_LEVEL ? BLOCKS.SAND : BLOCKS.GRASS;
             else if (y >= h-3) t = BLOCKS.DIRT;
             else               t = hash(wx+y,wz+y) < 0.05 ? BLOCKS.COAL : BLOCKS.STONE;
             setBlock(wx,y,wz,t);
@@ -1339,22 +1339,33 @@
       let i = 0;
       const bar = document.getElementById('load-bar');
       const loadTxt = document.getElementById('load-txt');
+      // Phase 1: generate all terrain data, Phase 2: build all meshes
+      // This ensures chunk boundaries have correct neighbor data when meshes are built.
       function nextChunk() {
-        if (i >= tasks.length) {
+        if (i < tasks.length) {
+          const [dx, dz] = tasks[i++];
+          generateChunk(dx, dz);
+          const pct = Math.round((i / tasks.length) * 50);
+          if (bar) bar.style.width = pct + '%';
+          if (loadTxt) loadTxt.textContent = `Terrain ${i} / ${tasks.length}…`;
+          renderer.render(scene, camera);
+          setTimeout(nextChunk, 0);
+        } else if (i < tasks.length * 2) {
+          const j = i - tasks.length;
+          const [dx, dz] = tasks[j];
+          buildChunkMesh(dx, dz);
+          i++;
+          const pct = 50 + Math.round((j+1) / tasks.length * 50);
+          if (bar) bar.style.width = pct + '%';
+          if (loadTxt) loadTxt.textContent = `Mesh ${j+1} / ${tasks.length}…`;
+          renderer.render(scene, camera);
+          setTimeout(nextChunk, 0);
+        } else {
           startScreen.style.display = 'none';
           started = true;
           lastChunk = `${Math.floor(player.pos.x/CHUNK_SIZE)},${Math.floor(player.pos.z/CHUNK_SIZE)}`;
           requestAnimationFrame(loop);
-          return;
         }
-        const [dx, dz] = tasks[i++];
-        generateChunk(dx, dz);
-        buildChunkMesh(dx, dz);
-        const pct = Math.round((i / tasks.length) * 100);
-        if (bar) bar.style.width = pct + '%';
-        if (loadTxt) loadTxt.textContent = `Chunk ${i} / ${tasks.length} — ${pct}%`;
-        renderer.render(scene, camera);
-        setTimeout(nextChunk, 0);
       }
       nextChunk();
     });
