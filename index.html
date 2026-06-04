@@ -590,8 +590,7 @@
     TEX[_T.LEAF] = allFaces(ctx => {
       for(let y=0;y<16;y++) for(let x=0;x<16;x++){
         const v=pxNoise(x,y,8);
-        if(v<0.12){ctx.fillStyle='rgba(0,0,0,0)';} // transparent holes
-        else { ctx.fillStyle=addBrightness('#2d7a1a',(v*60-20)|0); ctx.fillRect(x,y,1,1); }
+        ctx.fillStyle=addBrightness('#2d7a1a',(v*60-20)|0); ctx.fillRect(x,y,1,1);
       }
     });
 
@@ -679,7 +678,7 @@
     });
 
     // transparent blocks
-    const TRANSPARENT_BLOCKS = new Set([_T.WATER, _T.GLASS, _T.LEAF]);
+    const TRANSPARENT_BLOCKS = new Set([_T.WATER, _T.GLASS]);
 
     // ── Three.js init (after TEX, so errors here don't block textures) ──
     const canvas = document.getElementById('canvas');
