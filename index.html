@@ -48,6 +48,10 @@
       image-rendering: pixelated;
     }
     #stats.show { display: flex; }
+    #dmg-flash {
+      position: fixed; inset: 0; background: #b00000;
+      opacity: 0; pointer-events: none; z-index: 45;
+    }
     #hearts, #hunger { display: flex; gap: 1px; }
     #hunger { flex-direction: row-reverse; }
     #stats canvas { width: 20px; height: 20px; image-rendering: pixelated;
@@ -311,6 +315,7 @@
 <body>
   <canvas id="canvas"></canvas>
   <div id="crosshair"></div>
+  <div id="dmg-flash"></div>
   <div id="stats">
     <div id="hearts"></div>
     <div id="hunger"></div>
@@ -1243,6 +1248,30 @@
     const MAX_HEARTS = 9;            // 9 hearts, 9 hunger
     let health = MAX_HEARTS * 2;     // in half-units (full = 18)
     let hunger = MAX_HEARTS * 2;
+    // fall-damage tracking
+    let lastOnGround = true, fallPeakY = 0;
+
+    function flashDamage() {
+      const f = document.getElementById('dmg-flash');
+      if (!f) return;
+      f.style.transition = 'none'; f.style.opacity = '0.55';
+      requestAnimationFrame(() => { f.style.transition = 'opacity 0.4s'; f.style.opacity = '0'; });
+    }
+    function applyDamage(half) {
+      health = Math.max(0, health - half);
+      renderStats();
+      flashDamage();
+      if (health <= 0) respawn();
+    }
+    function respawn() {
+      const sh = terrainHeight(8,8);
+      player.pos.set(8, sh + 3, 8);
+      player.vel.set(0,0,0);
+      health = MAX_HEARTS * 2;
+      hunger = MAX_HEARTS * 2;
+      lastOnGround = true; fallPeakY = player.pos.y;
+      renderStats();
+    }
 
     // pixel-art icon (8×8) with column split for half icons
     const HEART_ROWS = [
@@ -1553,6 +1582,20 @@
       player.vel.y += GRAVITY*dt;
       resolveCollisions(dt);
 
+      // ── Fall damage ──────────────────────────────────────────────
+      if (player.onGround) {
+        if (!lastOnGround) {
+          const fall = fallPeakY - player.pos.y;
+          // 1 damage point (½ heart) per block fallen beyond 3
+          const dmg = Math.floor(fall) - 3;
+          if (dmg > 0) applyDamage(dmg);
+        }
+        fallPeakY = player.pos.y;
+      } else if (player.pos.y > fallPeakY) {
+        fallPeakY = player.pos.y;
+      }
+      lastOnGround = player.onGround;
+
       updateAvatar(dt);
       camera.rotation.order='YXZ'; camera.rotation.y=player.yaw; camera.rotation.x=player.pitch;
       if (thirdPerson) {
@@ -1613,7 +1656,8 @@
       get renderer(){return renderer;}, get started(){return started;},
       getBlock, raycast, terrainHeight, BLOCKS, render(){ renderer.render(scene,camera); },
       setThirdPerson(v){ thirdPerson = v; }, get avatar(){ return avatar; },
-      get sprinting(){ return sprinting; }, get vel(){ return player.vel; }
+      get sprinting(){ return sprinting; }, get vel(){ return player.vel; },
+      get health(){ return health; }, get onGround(){ return player.onGround; }
     };
 
     // ── Pixelated start-screen background ────────────────────────
@@ -1870,6 +1914,7 @@
           started = true;
           document.getElementById('stats').classList.add('show');
           renderStats();
+          lastOnGround = false; fallPeakY = player.pos.y;
           lastChunk = `${Math.floor(player.pos.x/CHUNK_SIZE)},${Math.floor(player.pos.z/CHUNK_SIZE)}`;
           requestAnimationFrame(loop);
         }
