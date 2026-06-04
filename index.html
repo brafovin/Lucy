@@ -305,6 +305,10 @@
       height: 4px; border-top: 2px solid #555; border-bottom: 1px solid #fff;
       margin: 4px 0;
     }
+    .inv-tools-title { color:#fff; font-size:11px; margin:6px 0 3px; }
+    .inv-tools {
+      display: grid; grid-template-columns: repeat(6, 36px); gap: 2px;
+    }
     /* hotbar row */
     .inv-hotbar-row {
       display: grid; grid-template-columns: repeat(9, 36px); gap: 2px;
@@ -394,6 +398,9 @@
           </div>
         </div>
       </div>
+      <!-- Tool palette (creative grab) -->
+      <div class="inv-tools-title">Werkzeuge (klicken zum Nehmen)</div>
+      <div class="inv-tools" id="inv-tools"></div>
       <!-- Main inventory 3×9 -->
       <div class="inv-main" id="inv-main"></div>
       <!-- Separator -->
@@ -467,7 +474,9 @@
     const ITEM_NAMES = { 101:'Schweinefleisch', 102:'Rindfleisch', 103:'Hammelfleisch' };
     const ITEM_FOOD  = { 101:6, 102:8, 103:6 }; // hunger half-points restored
     const MOB_DROP   = { pig:101, cow:102, sheep:103 };
-    const isFood = id => id >= 100;
+    const isFood = id => id >= 100 && id < 200;
+    const isTool = id => id >= 200;
+    const isBlockId = id => id > 0 && id < 100;
     // 8×8 pixel-art meat icons  (1=dark,2=meat,3=light meat,4=bone/fat)
     const MEAT_ROWS = [
       '00444000','04222400','42222240','42333240',
@@ -487,6 +496,134 @@
         ctx.fillStyle=pal[ch]||'#e58a8a'; ctx.fillRect(Math.floor(x*SC),Math.floor(y*SC),Math.ceil(SC),Math.ceil(SC));
       }
       return c;
+    }
+
+    // ── Tools (ids >= 200) ────────────────────────────────────────
+    // id layout: 200 + typeIndex*10 + materialIndex
+    const TOOL_TYPES = ['sword','pickaxe','axe','shovel','hoe'];
+    const TOOL_TYPE_DE = { sword:'Schwert', pickaxe:'Spitzhacke', axe:'Axt', shovel:'Schaufel', hoe:'Hacke' };
+    const TOOL_MATS  = ['wood','stone','iron','gold','diamond','netherite'];
+    const TOOL_MAT_DE = ['Holz','Stein','Eisen','Gold','Diamant','Netherit'];
+    const SPECIAL = { trident:260, bow:261 };
+    function toolId(type, mat){ return 200 + TOOL_TYPES.indexOf(type)*10 + mat; }
+    function toolInfo(id){
+      if (id===SPECIAL.trident) return { type:'trident', tier:5, dmg:9, name:'Dreizack' };
+      if (id===SPECIAL.bow)     return { type:'bow', tier:0, dmg:1, name:'Bogen' };
+      if (id < 200) return null;
+      const t = Math.floor((id-200)/10), m = (id-200)%10;
+      if (t<0||t>=TOOL_TYPES.length||m<0||m>=TOOL_MATS.length) return null;
+      const type = TOOL_TYPES[t], tier = m+1;
+      const name = `${TOOL_MAT_DE[m]}-${TOOL_TYPE_DE[type]}`;
+      // attack damage (half-hearts): sword strongest, axe next
+      let dmg = 1;
+      if (type==='sword') dmg = 3 + tier;       // 4..9
+      else if (type==='axe') dmg = 2 + tier;    // 3..8
+      else if (type==='pickaxe') dmg = 1 + Math.ceil(tier/2);
+      else dmg = 1 + Math.floor(tier/3);
+      return { type, mat:TOOL_MATS[m], tier, dmg, name };
+    }
+    // which block-mining category each tool speeds up
+    const TOOL_CATEGORY = {
+      pickaxe: new Set([3,10,11,13,14,9]),   // stone, cobble, brick, gravel, coal, glass
+      axe:     new Set([5,12]),               // wood, planks
+      shovel:  new Set([1,2,4,8]),            // grass, dirt, sand, snow
+      hoe:     new Set([6]),                  // leaves
+    };
+    // material head colours {H base, h highlight, d dark}
+    const TOOL_PAL = {
+      wood:     {H:'#9c7b48',h:'#bb975c',d:'#6e5630'},
+      stone:    {H:'#8f8f8f',h:'#b2b2b2',d:'#5e5e5e'},
+      iron:     {H:'#dcdcdc',h:'#ffffff',d:'#a0a0a0'},
+      gold:     {H:'#f2d24b',h:'#fff0a0',d:'#c79a20'},
+      diamond:  {H:'#3fe0cf',h:'#9ff5ea',d:'#23a899'},
+      netherite:{H:'#6a5f5e',h:'#8a7d7c',d:'#3a3231'},
+    };
+    const STICK = {S:'#6b4f2a', s:'#4a3519'};
+    // 16×16 silhouette templates per tool type
+    const TOOL_TPL = {
+      axe: [
+        '................','.....hHH........','....hHHHh.......','....HHHHd.......',
+        '....dHHHd.......','.....dHSd.......','......SS........','.....Ss.........',
+        '....Ss..........','...Ss...........','..Ss............','.Ss.............',
+        '.S..............','................','................','................',
+      ],
+      shovel: [
+        '................','..........hHh...','.........hHHHh..','.........HHHHd..',
+        '.........dHHd...','..........SS....','.........Ss.....','........Ss......',
+        '.......Ss.......','......Ss........','.....Ss.........','....Ss..........',
+        '...Ss...........','..Ss............','.S..............','................',
+      ],
+      hoe: [
+        '................','......hHHHH.....','......HHHHh.....','......d....d....',
+        '.......SS.......','......Ss........','.....Ss.........','....Ss..........',
+        '...Ss...........','..Ss............','.Ss.............','.S..............',
+        '................','................','................','................',
+      ],
+      pickaxe: [
+        '................','..hH.......Hh...','.hHHd.....dHHh..','..dHHd...dHHd...',
+        '....dHH.HHd.....','......SHS.......','.......S........','......Ss........',
+        '.....Ss.........','....Ss..........','...Ss...........','..Ss............',
+        '.Ss.............','.S..............','................','................',
+      ],
+      sword: [
+        '..............h.','.............hHh','............hHd.','...........hHd..',
+        '..........hHd...','.........hHd....','........hHd.....','.......hHd......',
+        '......hHd.......','.....hHd........','..S.SHd.........','...SSd..........',
+        '..S.Ss..........','.s..............','................','................',
+      ],
+      trident: [
+        '......h.h.h.....','......H.H.H.....','......HhHhH.....','.......HHH......',
+        '........H.......','........H.......','........H.......','........H.......',
+        '........H.......','........H.......','........H.......','........H.......',
+        '........H.......','........H.......','........d.......','................',
+      ],
+      bow: [
+        '.........hh.....','........h..d....','.......h....d...','......h.....S...',
+        '......H.....S...','......H....S....','......H...S.....','......H..S......',
+        '......H.S.......','......HS........','......HS........','......H.S.......',
+        '......H..S......','.......d...S....','........dd..d...','................',
+      ],
+    };
+    function makeToolIcon(id, size=38){
+      const info = toolInfo(id); if(!info) return document.createElement('canvas');
+      const tpl = TOOL_TPL[info.type] || TOOL_TPL.sword;
+      const mp = TOOL_PAL[info.mat] || (info.type==='trident'?TOOL_PAL.diamond:TOOL_PAL.wood);
+      const pal = { H:mp.H, h:mp.h, d:mp.d, S:STICK.S, s:STICK.s };
+      const c = document.createElement('canvas'); c.width=c.height=size;
+      const ctx=c.getContext('2d'); const N=16, SC=size/N;
+      for (let y=0;y<N;y++) for (let x=0;x<N;x++){
+        const ch=tpl[y][x]; if(ch==='.'||!pal[ch])continue;
+        ctx.fillStyle=pal[ch]; ctx.fillRect(Math.floor(x*SC),Math.floor(y*SC),Math.ceil(SC),Math.ceil(SC));
+      }
+      return c;
+    }
+    // unified icon for any item/block id
+    function makeIcon(id, size=38){
+      if (isTool(id)) return makeToolIcon(id, size);
+      if (isFood(id)) return makeItemIcon(id, size);
+      return makeBlockIcon(id, size);
+    }
+    function itemName(id){
+      if (isTool(id)) return (toolInfo(id)||{}).name || '?';
+      if (isFood(id)) return ITEM_NAMES[id] || '?';
+      return BLOCK_NAMES[id] || '?';
+    }
+    // full list of tools for the inventory palette
+    const ALL_TOOLS = [];
+    for (let t=0;t<TOOL_TYPES.length;t++) for (let m=0;m<TOOL_MATS.length;m++) ALL_TOOLS.push(200+t*10+m);
+    ALL_TOOLS.push(SPECIAL.trident, SPECIAL.bow);
+    // mining-speed multiplier when holding `id` and breaking block `bt`
+    function miningSpeed(id, bt){
+      const info = toolInfo(id);
+      if (!info) return 1;
+      const cat = TOOL_CATEGORY[info.type];
+      if (cat && cat.has(bt)) return 1 + info.tier * 0.8; // correct tool → up to ~5.8×
+      return 1;
+    }
+    // attack damage (half-hearts) when holding `id`
+    function attackDamage(id){
+      const info = toolInfo(id);
+      return info ? info.dmg : 2; // bare hand = 2
     }
 
     // ── Noise ─────────────────────────────────────────────────────
@@ -1358,7 +1495,7 @@
         if (d2 < 0.55 && t < bestT){ bestT=t; best=mob; }  // within ~0.75 radius
       }
       if (!best) return false;
-      best.hp -= 3;
+      best.hp -= attackDamage(hotbar[selectedSlot]);
       best.hurt = 0.25; tintMob(best, 0xff5555);
       best.kb = { x:fx*4, z:fz*4 };                       // knockback
       if (best.hp <= 0) killMob(best);
@@ -1469,7 +1606,7 @@
       const slot = document.createElement('div');
       slot.className = 'inv-slot' + (active ? ' inv-active' : '');
       if (bt) {
-        const icon = isFood(bt) ? makeItemIcon(bt, 28) : makeBlockIcon(bt, 28);
+        const icon = makeIcon(bt, 28);
         icon.className = 'slot-icon';
         slot.appendChild(icon);
         if (count != null) {
@@ -1567,6 +1704,22 @@
         }
       }
 
+      // Tool palette: click any tool to place it in the selected hotbar slot
+      const toolsEl = document.getElementById('inv-tools');
+      if (toolsEl) {
+        toolsEl.innerHTML = '';
+        ALL_TOOLS.forEach(tid => {
+          const slot = makeSlot(tid, null, () => {
+            hotbar[invSelectedHotbarSlot] = tid;
+            counts[invSelectedHotbarSlot] = 1;
+            buildInventoryUI(); updateHUD();
+          });
+          slot.addEventListener('mouseenter', e => showTooltip(e, itemName(tid)));
+          slot.addEventListener('mouseleave', hideTooltip);
+          toolsEl.appendChild(slot);
+        });
+      }
+
       // Main inventory: 3 rows × 9 = 27 slots (empty by default)
       const mainEl = document.getElementById('inv-main');
       if (mainEl) {
@@ -1581,8 +1734,7 @@
             buildInventoryUI(); updateHUD();
           } : null);
           if (bt) {
-            const name = isFood(bt) ? ITEM_NAMES[bt] : BLOCK_NAMES[bt];
-            slot.addEventListener('mouseenter', e => showTooltip(e, name||'?'));
+            slot.addEventListener('mouseenter', e => showTooltip(e, itemName(bt)));
             slot.addEventListener('mouseleave', hideTooltip);
           }
           mainEl.appendChild(slot);
@@ -1599,8 +1751,7 @@
             buildInventoryUI();
           }, i === invSelectedHotbarSlot);
           if (bt) {
-            const name = isFood(bt) ? ITEM_NAMES[bt] : BLOCK_NAMES[bt];
-            slot.addEventListener('mouseenter', e => showTooltip(e, name||'?'));
+            slot.addEventListener('mouseenter', e => showTooltip(e, itemName(bt)));
             slot.addEventListener('mouseleave', hideTooltip);
           }
           hRow.appendChild(slot);
@@ -1747,7 +1898,7 @@
         num.className = 'slot-num'; num.textContent = i+1;
         slot.appendChild(num);
         if (bt) {
-          const icon = isFood(bt) ? makeItemIcon(bt, 38) : makeBlockIcon(bt, 38);
+          const icon = makeIcon(bt, 38);
           icon.className = 'slot-icon';
           slot.appendChild(icon);
           if (counts[i] > 0) {
@@ -1877,7 +2028,7 @@
         mining.bx = hit.bx; mining.by = hit.by; mining.bz = hit.bz;
         mining.fi = hit.fi;
         mining.progress = 0;
-        mining.total = (BREAK_TIME[bt] ?? 1.0);
+        mining.total = (BREAK_TIME[bt] ?? 1.0) / miningSpeed(hotbar[selectedSlot], bt);
         mining.hit = hit;
       } else if (e.button===2) {
         const sel = hotbar[selectedSlot];
@@ -1889,7 +2040,7 @@
         const hit = raycast(8);
         if (!hit) return;
         const nx=hit.bx+hit.nx, ny=hit.by+hit.ny, nz=hit.bz+hit.nz;
-        if (sel && !isFood(sel) && !playerOccupies(nx,ny,nz)) {
+        if (isBlockId(sel) && !playerOccupies(nx,ny,nz)) {
           setBlock(nx,ny,nz,sel);
           rebuildChunksAround(nx,nz);
           counts[selectedSlot]--;
@@ -2090,7 +2241,7 @@
       get mobs(){ return mobs; }, get drops(){ return drops; },
       get hotbar(){ return hotbar; }, get counts(){ return counts; },
       get hunger(){ return hunger; }, set hunger(v){ hunger=v; renderStats(); },
-      attackMob, addItem, killMob,
+      attackMob, addItem, killMob, toolInfo, miningSpeed, attackDamage, makeToolIcon, ALL_TOOLS,
       eat(){ eating.active=true; eating.t=0; }
     };
 
