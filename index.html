@@ -716,7 +716,7 @@
         transparent: isT,
         opacity:     bt === _T.WATER ? 0.72 : 1,
         alphaTest:   bt === _T.LEAF  ? 0.3  : 0,
-        side:        isT ? THREE.DoubleSide : THREE.FrontSide,
+        side:        THREE.DoubleSide,
       });
       matCache.set(k, mat);
       return mat;
