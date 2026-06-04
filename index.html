@@ -201,68 +201,97 @@
     /* ── Inventory overlay ── */
     #inventory {
       position: fixed; inset: 0;
-      background: rgba(0,0,0,0.75);
+      background: rgba(0,0,0,0.6);
       display: none; align-items: center; justify-content: center;
       z-index: 80;
+      image-rendering: pixelated;
     }
     #inventory.open { display: flex; }
     .inv-window {
-      background: #8b8b8b;
-      border: 3px solid #373737;
-      padding: 12px;
-      box-shadow: 4px 4px 0 #000;
-      min-width: 340px;
+      background: #c6c6c6;
+      padding: 8px 8px 8px 8px;
+      position: relative;
+      box-shadow: inset -2px -4px 0 #555, inset 2px 2px 0 #fff;
+      user-select: none;
     }
-    .inv-title {
-      color: #3f3f3f; font-size: 13px;
-      margin-bottom: 10px; letter-spacing: 1px;
-      text-shadow: 1px 1px 0 #aaa;
-    }
-    .inv-grid {
-      display: grid; grid-template-columns: repeat(9, 44px);
-      gap: 3px; margin-bottom: 10px;
-    }
+    /* slot shared style */
     .inv-slot {
-      width: 44px; height: 44px;
+      width: 36px; height: 36px;
       background: #8b8b8b;
-      border-top: 2px solid #373737;
-      border-left: 2px solid #373737;
-      border-bottom: 2px solid #fff;
-      border-right: 2px solid #fff;
+      box-shadow: inset -2px -2px 0 #fff, inset 2px 2px 0 #373737;
       display: flex; align-items: center; justify-content: center;
-      cursor: pointer; position: relative;
+      cursor: pointer; position: relative; flex-shrink: 0;
     }
     .inv-slot:hover { background: #a0a0a0; }
     .inv-slot.inv-active {
-      border-top: 2px solid #fff;
-      border-left: 2px solid #fff;
-      border-bottom: 2px solid #373737;
-      border-right: 2px solid #373737;
+      box-shadow: inset -2px -2px 0 #373737, inset 2px 2px 0 #fff;
       background: #9a9a9a;
     }
-    .inv-slot .slot-icon {
-      width: 32px; height: 32px;
-    }
+    .inv-slot .slot-icon { width: 28px; height: 28px; }
     .inv-slot .item-count {
-      position: absolute; bottom: 2px; right: 3px;
-      font-size: 10px; color: #fff;
+      position: absolute; bottom: 1px; right: 2px;
+      font-size: 9px; color: #fff;
       text-shadow: 1px 1px 0 #000;
+      pointer-events: none;
     }
-    .inv-sep {
-      border-top: 2px solid #373737;
-      border-bottom: 1px solid #fff;
-      margin: 6px 0;
+    /* top section: player + armor left, crafting right */
+    .inv-top {
+      display: flex; gap: 8px; margin-bottom: 4px; align-items: flex-start;
     }
+    /* armor column */
+    .inv-armor {
+      display: flex; flex-direction: column; gap: 2px; justify-content: center;
+      padding-top: 2px;
+    }
+    /* player preview canvas */
+    #inv-player {
+      width: 64px; height: 88px;
+      background: #8b8b8b;
+      box-shadow: inset -2px -2px 0 #fff, inset 2px 2px 0 #373737;
+      flex-shrink: 0;
+    }
+    /* slots below player (offhand / extra) */
+    .inv-below-player {
+      display: flex; gap: 2px; margin-top: 2px;
+    }
+    /* crafting section */
+    .inv-craft-section {
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .inv-craft-title {
+      font-size: 10px; color: #3f3f3f;
+      text-shadow: 1px 1px 0 #ddd;
+      margin-bottom: 2px; letter-spacing: 0.5px;
+    }
+    .inv-craft-row {
+      display: flex; align-items: center; gap: 4px;
+    }
+    .inv-craft-grid {
+      display: grid; grid-template-columns: repeat(2, 36px); gap: 2px;
+    }
+    .inv-craft-arrow {
+      font-size: 20px; color: #555; margin: 0 2px;
+      text-shadow: 1px 1px 0 #fff;
+    }
+    /* main inventory: 3 rows of 9 */
+    .inv-main {
+      display: grid; grid-template-columns: repeat(9, 36px); gap: 2px;
+      margin-top: 6px;
+    }
+    /* separator */
+    .inv-sep-line {
+      height: 4px; border-top: 2px solid #555; border-bottom: 1px solid #fff;
+      margin: 4px 0;
+    }
+    /* hotbar row */
     .inv-hotbar-row {
-      display: grid; grid-template-columns: repeat(9, 44px);
-      gap: 3px;
+      display: grid; grid-template-columns: repeat(9, 36px); gap: 2px;
     }
-    .inv-label { font-size: 10px; color: #3f3f3f; margin-bottom: 4px; }
     .inv-tooltip {
       position: fixed; background: rgba(16,0,16,0.9);
       border: 1px solid #555; color: #fff; font-size: 12px;
       padding: 4px 8px; pointer-events: none; z-index: 99; display: none;
-      text-shadow: 1px 1px 0 #000;
+      text-shadow: 1px 1px 0 #000; font-family: 'Press Start 2P', monospace;
     }
   </style>
 </head>
@@ -314,11 +343,35 @@
 
   <div id="inventory">
     <div class="inv-window">
-      <div class="inv-title">INVENTAR</div>
-      <div class="inv-label">Alle Blöcke</div>
-      <div class="inv-grid" id="inv-grid"></div>
-      <div class="inv-sep"></div>
-      <div class="inv-label">Hotbar (klicken zum Belegen)</div>
+      <!-- Top: armor + player + crafting -->
+      <div class="inv-top">
+        <!-- Armor slots (4) -->
+        <div class="inv-armor" id="inv-armor"></div>
+        <!-- Player preview + offhand -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+          <canvas id="inv-player" width="64" height="88"></canvas>
+          <div class="inv-below-player">
+            <div class="inv-slot" id="inv-offhand" title="Nebenhand"></div>
+            <div class="inv-slot" style="cursor:default;opacity:0.5;" title="Rezeptbuch">
+              <span style="font-size:16px;">📖</span>
+            </div>
+          </div>
+        </div>
+        <!-- Crafting 2×2 -->
+        <div class="inv-craft-section">
+          <div class="inv-craft-title">Handwerk</div>
+          <div class="inv-craft-row">
+            <div class="inv-craft-grid" id="inv-craft-grid"></div>
+            <div class="inv-craft-arrow">→</div>
+            <div class="inv-slot" id="inv-craft-out" title="Ergebnis" style="cursor:default;"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Main inventory 3×9 -->
+      <div class="inv-main" id="inv-main"></div>
+      <!-- Separator -->
+      <div class="inv-sep-line"></div>
+      <!-- Hotbar row -->
       <div class="inv-hotbar-row" id="inv-hotbar"></div>
     </div>
   </div>
@@ -873,52 +926,153 @@
       return out;
     }
 
-    function buildInventoryUI() {
-      const grid = document.getElementById('inv-grid');
-      const hRow = document.getElementById('inv-hotbar');
-      grid.innerHTML = '';
-      hRow.innerHTML  = '';
+    // player inventory contents: 27 slots (3 rows × 9)
+    const playerInv = new Array(27).fill(0);
+    // crafting grid: 4 slots
+    const craftGrid = new Array(4).fill(0);
+    // armor slots: helmet, chestplate, leggings, boots (icons as emoji)
+    const ARMOR_ICONS = ['⛑','🧥','👖','👟'];
 
-      // All placeable blocks
-      ALL_PLACEABLE.forEach(bt => {
-        const slot = document.createElement('div');
-        slot.className = 'inv-slot';
-        const icon = makeBlockIcon(bt, 32);
+    function makeSlot(bt, onClick, active) {
+      const slot = document.createElement('div');
+      slot.className = 'inv-slot' + (active ? ' inv-active' : '');
+      if (bt) {
+        const icon = makeBlockIcon(bt, 28);
         icon.className = 'slot-icon';
         slot.appendChild(icon);
-        slot.title = BLOCK_NAMES[bt];
-        slot.addEventListener('click', () => {
-          hotbar[invSelectedHotbarSlot] = bt;
-          selectedSlot = invSelectedHotbarSlot;
-          buildInventoryUI();
-          updateHUD();
-        });
-        slot.addEventListener('mouseenter', e => showTooltip(e, BLOCK_NAMES[bt]));
-        slot.addEventListener('mouseleave', hideTooltip);
-        grid.appendChild(slot);
-      });
+        const cnt = document.createElement('div');
+        cnt.className = 'item-count'; cnt.textContent = '∞';
+        slot.appendChild(cnt);
+      }
+      if (onClick) slot.addEventListener('click', onClick);
+      return slot;
+    }
 
-      // Hotbar row inside inventory
-      hotbar.forEach((bt, i) => {
-        const slot = document.createElement('div');
-        slot.className = 'inv-slot' + (i === invSelectedHotbarSlot ? ' inv-active' : '');
-        if (bt) {
-          const icon = makeBlockIcon(bt, 32);
-          icon.className = 'slot-icon';
-          slot.appendChild(icon);
-          const cnt = document.createElement('div');
-          cnt.className = 'item-count'; cnt.textContent = '∞';
-          slot.appendChild(cnt);
-        }
-        slot.title = bt ? BLOCK_NAMES[bt] : 'Leer';
-        slot.addEventListener('click', () => {
-          invSelectedHotbarSlot = i;
-          buildInventoryUI();
+    function drawPlayerPreview() {
+      const cv = document.getElementById('inv-player');
+      if (!cv) return;
+      const ctx = cv.getContext('2d');
+      const W = cv.width, H = cv.height;
+      ctx.clearRect(0,0,W,H);
+
+      // dark background
+      ctx.fillStyle = '#777';
+      ctx.fillRect(0,0,W,H);
+
+      // simple Steve pixel art centered
+      const S = 4; // scale
+      function px(x,y,c,w=1,h=1){ ctx.fillStyle=c; ctx.fillRect(x*S+(W-8*S)/2, y*S+2, w*S, h*S); }
+
+      // Head (8×8)
+      // skin tone
+      for(let r=0;r<8;r++) for(let c2=0;c2<8;c2++) px(c2,r,'#c8844c');
+      // hair
+      for(let c2=0;c2<8;c2++) px(c2,0,'#4a3010');
+      for(let c2=0;c2<8;c2++) px(c2,1,'#4a3010');
+      for(let c2=0;c2<2;c2++) px(c2,2,'#4a3010');
+      for(let c2=6;c2<8;c2++) px(c2,2,'#4a3010');
+      // eyes
+      px(1,3,'#3a2b0a'); px(5,3,'#3a2b0a');
+      // mouth
+      px(2,5,'#7a3a1a'); px(3,5,'#7a3a1a'); px(4,5,'#7a3a1a'); px(5,5,'#7a3a1a');
+      // beard outline
+      px(2,6,'#5a3010'); px(5,6,'#5a3010');
+
+      // Body (8×12) starting at y=8
+      // teal shirt
+      for(let r=0;r<12;r++) for(let c2=0;c2<8;c2++) px(c2,8+r,'#1a7a78');
+      // shirt detail
+      for(let c2=0;c2<8;c2++) px(c2,8,'#1a6060');
+      for(let c2=0;c2<8;c2++) px(c2,19,'#1a6060');
+
+      // Arms (2×10 each side)
+      for(let r=0;r<10;r++){ px(-2,9+r,'#c8844c'); px(8,9+r,'#c8844c'); }
+      // sleeve
+      for(let r=0;r<6;r++){ ctx.fillStyle='#1a7a78'; ctx.fillRect((-2)*S+(W-8*S)/2,2+(9+r)*S,2*S,S); }
+      for(let r=0;r<6;r++){ ctx.fillStyle='#1a7a78'; ctx.fillRect(8*S+(W-8*S)/2,2+(9+r)*S,2*S,S); }
+
+      // Legs (4×10 each) starting at y=20
+      // left leg (blue)
+      for(let r=0;r<10;r++) px(0,20+r,'#2a3a8a',4);
+      // right leg
+      for(let r=0;r<10;r++) px(4,20+r,'#1a2a7a',4);
+      // highlight
+      for(let r=0;r<2;r++){ px(0,20+r,'#3a4a9a',4); px(4,20+r,'#2a3a8a',4); }
+    }
+
+    function buildInventoryUI() {
+      // Armor slots
+      const armorEl = document.getElementById('inv-armor');
+      if (armorEl) {
+        armorEl.innerHTML = '';
+        ARMOR_ICONS.forEach(icon => {
+          const slot = document.createElement('div');
+          slot.className = 'inv-slot';
+          slot.style.cursor = 'default';
+          slot.style.fontSize = '20px';
+          slot.textContent = icon;
+          armorEl.appendChild(slot);
         });
-        slot.addEventListener('mouseenter', e => bt && showTooltip(e, BLOCK_NAMES[bt]));
-        slot.addEventListener('mouseleave', hideTooltip);
-        hRow.appendChild(slot);
-      });
+      }
+
+      // Player preview
+      drawPlayerPreview();
+
+      // Crafting grid (4 slots, clickable to pick block)
+      const craftEl = document.getElementById('inv-craft-grid');
+      if (craftEl) {
+        craftEl.innerHTML = '';
+        for (let i = 0; i < 4; i++) {
+          const bt = craftGrid[i];
+          const slot = makeSlot(bt, () => {
+            // clicking a filled slot clears it; pick from inv
+            craftGrid[i] = 0;
+            buildInventoryUI();
+          });
+          if (!bt) slot.style.cursor = 'default';
+          craftEl.appendChild(slot);
+        }
+      }
+
+      // Main inventory: 3 rows × 9 = 27 slots (ALL_PLACEABLE fills first slots)
+      const mainEl = document.getElementById('inv-main');
+      if (mainEl) {
+        mainEl.innerHTML = '';
+        // fill playerInv with ALL_PLACEABLE for demo
+        ALL_PLACEABLE.forEach((bt, i) => { if (playerInv[i] === 0) playerInv[i] = bt; });
+        for (let i = 0; i < 27; i++) {
+          const bt = playerInv[i];
+          const slot = makeSlot(bt, bt ? () => {
+            // click to place into selected hotbar slot
+            hotbar[invSelectedHotbarSlot] = bt;
+            selectedSlot = invSelectedHotbarSlot;
+            buildInventoryUI();
+            updateHUD();
+          } : null);
+          if (bt) {
+            slot.addEventListener('mouseenter', e => showTooltip(e, BLOCK_NAMES[bt]));
+            slot.addEventListener('mouseleave', hideTooltip);
+          }
+          mainEl.appendChild(slot);
+        }
+      }
+
+      // Hotbar row
+      const hRow = document.getElementById('inv-hotbar');
+      if (hRow) {
+        hRow.innerHTML = '';
+        hotbar.forEach((bt, i) => {
+          const slot = makeSlot(bt, () => {
+            invSelectedHotbarSlot = i;
+            buildInventoryUI();
+          }, i === invSelectedHotbarSlot);
+          if (bt) {
+            slot.addEventListener('mouseenter', e => showTooltip(e, BLOCK_NAMES[bt]));
+            slot.addEventListener('mouseleave', hideTooltip);
+          }
+          hRow.appendChild(slot);
+        });
+      }
     }
 
     function showTooltip(e, text) {
