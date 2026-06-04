@@ -74,6 +74,11 @@
       font-size: 9px; color: #ccc;
       line-height: 1;
     }
+    .slot-count {
+      position: absolute; bottom: 1px; right: 3px;
+      font-size: 14px; color: #fff; font-weight: bold;
+      text-shadow: 1px 1px 0 #000; line-height: 1;
+    }
 
     #info {
       position: fixed; top: 8px; left: 8px;
@@ -454,7 +459,35 @@
     ];
 
     // hotbar: 9 slots
-    let hotbar = [BLOCKS.GRASS, BLOCKS.DIRT, BLOCKS.STONE, BLOCKS.SAND, BLOCKS.WOOD, BLOCKS.PLANKS, BLOCKS.BRICK, BLOCKS.GLASS, BLOCKS.COAL];
+    let hotbar = [BLOCKS.GRASS, BLOCKS.DIRT, BLOCKS.STONE, BLOCKS.SAND, BLOCKS.WOOD, BLOCKS.PLANKS, BLOCKS.BRICK, 0, 0];
+    let counts = [0,0,0,0,0,0,0,0,0]; // stack counts (only used/shown for food items)
+
+    // ── Food items (ids >= 100, distinct from block ids) ──────────
+    const ITEMS = { PORK:101, BEEF:102, MUTTON:103 };
+    const ITEM_NAMES = { 101:'Schweinefleisch', 102:'Rindfleisch', 103:'Hammelfleisch' };
+    const ITEM_FOOD  = { 101:6, 102:8, 103:6 }; // hunger half-points restored
+    const MOB_DROP   = { pig:101, cow:102, sheep:103 };
+    const isFood = id => id >= 100;
+    // 8×8 pixel-art meat icons  (1=dark,2=meat,3=light meat,4=bone/fat)
+    const MEAT_ROWS = [
+      '00444000','04222400','42222240','42333240',
+      '42222240','42222240','04222240','00444400',
+    ];
+    const MEAT_PAL = {
+      101:{'1':'#5a1a1a','2':'#e58a8a','3':'#f7c0c0','4':'#efe6c8'}, // pork pinkish
+      102:{'1':'#3a1208','2':'#a8482a','3':'#c87a4a','4':'#efe6c8'}, // beef brown
+      103:{'1':'#4a2010','2':'#c06a3a','3':'#e0a070','4':'#efe6c8'}, // mutton
+    };
+    function makeItemIcon(id, size=38){
+      const c = document.createElement('canvas'); c.width=c.height=size;
+      const ctx = c.getContext('2d'); const N=8, SC=size/N;
+      const pal = MEAT_PAL[id]||MEAT_PAL[101];
+      for (let y=0;y<N;y++) for (let x=0;x<N;x++){
+        const ch=MEAT_ROWS[y][x]; if(ch==='0')continue;
+        ctx.fillStyle=pal[ch]||'#e58a8a'; ctx.fillRect(Math.floor(x*SC),Math.floor(y*SC),Math.ceil(SC),Math.ceil(SC));
+      }
+      return c;
+    }
 
     // ── Noise ─────────────────────────────────────────────────────
     function hash(x, z) {
@@ -986,7 +1019,25 @@
     let walkPhase = 0;
     // ── Attack / hit swing sequence ──────────────────────────────────
     const swing = { active:false, t:0, dur:0.28 };
+    const eating = { active:false, t:0, dur:1.4 };
     function startSwing(){ swing.active = true; swing.t = 0; }
+    function updateEating(dt){
+      if (!eating.active) return;
+      const sel = hotbar[selectedSlot];
+      // abort if no longer valid
+      if (!isFood(sel) || counts[selectedSlot] <= 0 || hunger >= MAX_HEARTS*2){ eating.active=false; return; }
+      eating.t += dt;
+      // wobble the view arm toward the mouth while eating
+      const va = avatarParts && avatarParts.viewArm;
+      if (va){ const r=avatarParts.viewArmRest; va.rotation.x = r.rot.x - 0.6 + Math.sin(eating.t*30)*0.12; }
+      if (eating.t >= eating.dur){
+        eating.t = 0;
+        hunger = Math.min(MAX_HEARTS*2, hunger + (ITEM_FOOD[sel]||4));
+        counts[selectedSlot]--;
+        if (counts[selectedSlot] <= 0){ hotbar[selectedSlot]=0; counts[selectedSlot]=0; eating.active=false; }
+        renderStats(); updateHUD();
+      }
+    }
     function updateSwing(dt){
       if (!avatarParts) return;
       if (swing.active){
@@ -1205,7 +1256,99 @@
         L[1].rotation.x = -sw; L[2].rotation.x = -sw;  // FR, BL
         // idle head bob
         mob.parts.headGrp.rotation.x = Math.sin(mob.legPhase*0.5)*0.05;
+        // hurt flash + knockback decay
+        if (mob.hurt > 0){
+          mob.hurt -= dt;
+          if (mob.hurt <= 0) tintMob(mob, 0xffffff);
+        }
+        if (mob.kb){
+          mob.pos.x += mob.kb.x*dt; mob.pos.z += mob.kb.z*dt;
+          mob.kb.x *= 0.85; mob.kb.z *= 0.85;
+          if (Math.abs(mob.kb.x)+Math.abs(mob.kb.z) < 0.05) mob.kb = null;
+        }
       }
+    }
+
+    // tint every textured face of a mob (white = normal, red = hurt)
+    function tintMob(mob, hex){
+      mob.parts.grp.traverse(o=>{
+        if (o.isMesh){
+          const mats = Array.isArray(o.material)?o.material:[o.material];
+          mats.forEach(m=>{ if(m.color) m.color.setHex(hex); });
+        }
+      });
+    }
+
+    // ── Item drops on the ground ──────────────────────────────────
+    const drops = [];
+    function spawnDrop(id, x, y, z){
+      const g = new THREE.BoxGeometry(0.3,0.3,0.3);
+      const tex = new THREE.CanvasTexture(makeItemIcon(id, 16));
+      tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps=false;
+      const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({map:tex}));
+      mesh.position.set(x, y+0.3, z);
+      scene.add(mesh);
+      drops.push({ id, mesh, vy: 2.5+Math.random(), spin: Math.random()*6, age:0 });
+    }
+    function updateDrops(dt){
+      for (let i=drops.length-1;i>=0;i--){
+        const d = drops[i];
+        d.age += dt;
+        // gravity + ground rest
+        d.vy -= 12*dt;
+        d.mesh.position.y += d.vy*dt;
+        const g = groundTop(d.mesh.position.x, d.mesh.position.z);
+        const rest = g + 0.18 + Math.sin(d.age*3)*0.05;
+        if (d.mesh.position.y < rest){ d.mesh.position.y = rest; d.vy = 0; }
+        d.mesh.rotation.y += dt*2;
+        // pickup
+        const dx = d.mesh.position.x - player.pos.x;
+        const dz = d.mesh.position.z - player.pos.z;
+        const dy = d.mesh.position.y - (player.pos.y + 0.5);
+        if (d.age > 0.6 && dx*dx+dz*dz < 1.4 && Math.abs(dy) < 1.6){
+          if (addItem(d.id, 1)){
+            scene.remove(d.mesh); drops.splice(i,1);
+          }
+        }
+      }
+    }
+    // add item to hotbar: stack onto same food slot, else first empty slot
+    function addItem(id, n){
+      for (let i=0;i<9;i++) if (hotbar[i]===id){ counts[i]+=n; updateHUD(); return true; }
+      for (let i=0;i<9;i++) if (!hotbar[i]){ hotbar[i]=id; counts[i]=n; updateHUD(); return true; }
+      return false; // hotbar full
+    }
+
+    // ── Attacking mobs ────────────────────────────────────────────
+    function attackMob(){
+      if (!mobs.length) return false;
+      // camera forward ray
+      const fx = -Math.sin(player.yaw)*Math.cos(player.pitch);
+      const fy =  Math.sin(player.pitch);
+      const fz = -Math.cos(player.yaw)*Math.cos(player.pitch);
+      const ex = player.pos.x, ey = player.pos.y+player.eyeHeight, ez = player.pos.z;
+      let best=null, bestT=Infinity;
+      for (const mob of mobs){
+        const cx=mob.pos.x, cy=mob.pos.y+0.6, cz=mob.pos.z;
+        const t = (cx-ex)*fx + (cy-ey)*fy + (cz-ez)*fz; // projection onto ray
+        if (t<0 || t>4) continue;                        // behind or out of reach
+        const px=ex+fx*t, py=ey+fy*t, pz=ez+fz*t;
+        const d2 = (px-cx)**2 + (py-cy)**2 + (pz-cz)**2;
+        if (d2 < 0.55 && t < bestT){ bestT=t; best=mob; }  // within ~0.75 radius
+      }
+      if (!best) return false;
+      best.hp -= 3;
+      best.hurt = 0.25; tintMob(best, 0xff5555);
+      best.kb = { x:fx*4, z:fz*4 };                       // knockback
+      if (best.hp <= 0) killMob(best);
+      return true;
+    }
+    function killMob(mob){
+      const id = MOB_DROP[mob.type];
+      const n = 1 + (Math.random()<0.5?1:0);
+      for (let k=0;k<n;k++) spawnDrop(id, mob.pos.x+(Math.random()-0.5)*0.3, mob.pos.y, mob.pos.z+(Math.random()-0.5)*0.3);
+      scene.remove(mob.parts.grp);
+      const i = mobs.indexOf(mob); if (i>=0) mobs.splice(i,1);
     }
 
     let paused = false;
@@ -1482,6 +1625,23 @@
       flashDamage();
       if (health <= 0) respawn();
     }
+    // hunger slowly drains; full hunger regenerates health, empty hunger starves
+    let exhaustion = 0, regenTimer = 0, starveTimer = 0;
+    function updateSurvival(dt){
+      const moving = (Math.abs(player.vel.x)+Math.abs(player.vel.z)) > 0.5;
+      exhaustion += dt * (sprinting ? 0.06 : moving ? 0.025 : 0.012);
+      if (exhaustion >= 1 && hunger > 0){ hunger--; exhaustion = 0; renderStats(); }
+      // regen health when well-fed
+      if (hunger >= MAX_HEARTS*2 - 2 && health < MAX_HEARTS*2){
+        regenTimer += dt;
+        if (regenTimer >= 3){ regenTimer = 0; health = Math.min(MAX_HEARTS*2, health+1); exhaustion += 0.4; renderStats(); }
+      } else regenTimer = 0;
+      // starvation
+      if (hunger <= 0){
+        starveTimer += dt;
+        if (starveTimer >= 4){ starveTimer = 0; if (health > 2){ health--; flashDamage(); renderStats(); } }
+      } else starveTimer = 0;
+    }
     function respawn() {
       const sh = terrainHeight(8,8);
       player.pos.set(8, sh + 3, 8);
@@ -1564,9 +1724,14 @@
         num.className = 'slot-num'; num.textContent = i+1;
         slot.appendChild(num);
         if (bt) {
-          const icon = makeBlockIcon(bt, 38);
+          const icon = isFood(bt) ? makeItemIcon(bt, 38) : makeBlockIcon(bt, 38);
           icon.className = 'slot-icon';
           slot.appendChild(icon);
+          if (isFood(bt) && counts[i] > 0) {
+            const cnt = document.createElement('div');
+            cnt.className = 'slot-count'; cnt.textContent = counts[i];
+            slot.appendChild(cnt);
+          }
         }
         slot.addEventListener('click', () => { selectedSlot=i; updateHUD(); });
         hud.appendChild(slot);
@@ -1680,6 +1845,8 @@
       if (!started||paused||inventoryOpen||document.pointerLockElement!==document.body) return;
       if (e.button===0) {
         startSwing();
+        // attacking a mob takes priority over mining a block
+        if (attackMob()) return;
         const hit = raycast(8);
         if (!hit) return;
         const bt = getBlock(hit.bx,hit.by,hit.bz);
@@ -1690,11 +1857,16 @@
         mining.total = (BREAK_TIME[bt] ?? 1.0);
         mining.hit = hit;
       } else if (e.button===2) {
+        const sel = hotbar[selectedSlot];
+        // hold right-click to eat food in the selected slot
+        if (isFood(sel) && counts[selectedSlot] > 0 && hunger < MAX_HEARTS*2) {
+          eating.active = true; eating.t = 0;
+          return;
+        }
         const hit = raycast(8);
         if (!hit) return;
         const nx=hit.bx+hit.nx, ny=hit.by+hit.ny, nz=hit.bz+hit.nz;
-        const sel = hotbar[selectedSlot];
-        if (sel && !playerOccupies(nx,ny,nz)) {
+        if (sel && !isFood(sel) && !playerOccupies(nx,ny,nz)) {
           setBlock(nx,ny,nz,sel);
           rebuildChunksAround(nx,nz);
         }
@@ -1704,6 +1876,8 @@
       if (e.button===0) {
         mining.active = false;
         crackMesh.visible = false;
+      } else if (e.button===2) {
+        eating.active = false;
       }
     });
     document.addEventListener('contextmenu', e => e.preventDefault());
@@ -1817,7 +1991,10 @@
       lastOnGround = player.onGround;
 
       updateAvatar(dt);
+      updateEating(dt);
       updateMobs(dt);
+      updateDrops(dt);
+      updateSurvival(dt);
       camera.rotation.order='YXZ'; camera.rotation.y=player.yaw; camera.rotation.x=player.pitch;
       if (thirdPerson) {
         // orbit camera behind the player
@@ -1880,7 +2057,11 @@
       setThirdPerson(v){ thirdPerson = v; }, get avatar(){ return avatar; },
       get sprinting(){ return sprinting; }, get vel(){ return player.vel; },
       get health(){ return health; }, get onGround(){ return player.onGround; },
-      get mobs(){ return mobs; }
+      get mobs(){ return mobs; }, get drops(){ return drops; },
+      get hotbar(){ return hotbar; }, get counts(){ return counts; },
+      get hunger(){ return hunger; }, set hunger(v){ hunger=v; renderStats(); },
+      attackMob, addItem, killMob,
+      eat(){ eating.active=true; eating.t=0; }
     };
 
     // ── Pixelated start-screen background ────────────────────────
